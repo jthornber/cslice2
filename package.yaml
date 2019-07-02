@@ -1,0 +1,67 @@
+name:                cslice2
+version:             0.1.0.0
+github:              "githubuser/cslice2"
+license:             GPL3
+author:              "Joe Thornber"
+maintainer:          "thornber@redhat.com"
+copyright:           "2019 RedHat UK Ltd"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+- app/Lexer.x
+
+build-tools:
+- alex
+- happy
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/cslice2#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- array
+- async
+- base >= 4.7 && < 5
+- bytestring
+- containers
+- lens
+- mtl
+- prettyprinter
+- protolude
+- stm
+- text
+- typed-process
+- unix
+- unordered-containers
+
+library:
+  source-dirs: src
+
+executables:
+  cslice:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - cslice2
+
+tests:
+  cslice2-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - cslice2
