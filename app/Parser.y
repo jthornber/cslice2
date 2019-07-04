@@ -1,11 +1,24 @@
 {
 module Parser (
+    expression,
+    postfix_exp,
+    unary_exp,
+    cast_exp,
+    additive_exp,
+    conditional_exp
     ) where
 
+import AST
 import Token
 }
 
-%name cparser
+%name expression expression
+%name postfix_exp postfix_exp
+%name unary_exp unary_exp
+%name cast_exp cast_exp
+%name additive_exp additive_exp
+%name conditional_exp conditional_exp
+
 %tokentype {Token}
 %error { parseError }
 
@@ -111,6 +124,7 @@ string_const	{T_STRING _}
 
 %%
 
+-- FIXME: finish
 type_name :: {Type}
     : identifier	{Void}
 
@@ -118,7 +132,7 @@ primary_exp :: {Exp}
     : identifier		{VarExp $1}
     | integer_const		{ConstExp $1}
     | string_const		{StringConstExp $1}
-    | '(' exp ')'		{$2}
+    | '(' expression ')'		{$2}
 
 {-
     | generic_selection		{$1}
@@ -138,12 +152,12 @@ generic_association
 
 postfix_exp :: {Exp}
     : primary_exp		{$1}
-    | postfix_exp '[' exp ']'	{SubscriptExp $1 $3}
+    | postfix_exp '[' expression ']'	{SubscriptExp $1 $3}
     | postfix_exp '(' argument_exp_list ')'	{FuncallExp $1 $ unreverse $3}
     | postfix_exp '.' identifier	{StructElt $1 $3}
-    | postfix_exp '->' identifier {StructDeref $1 $3}
-    | postfix_exp '++'	{UnaryExp POST_INC $1}
-    | postfix_exp '--'	{UnaryExp POST_DEC $1}
+    | postfix_exp '->' identifier 	{StructDeref $1 $3}
+    | postfix_exp '++'			{UnaryExp POST_INC $1}
+    | postfix_exp '--'			{UnaryExp POST_DEC $1}
 
 {-
     | '(' type_name ')' '{' initializer_list '}'	{}
@@ -175,6 +189,7 @@ unary_operator :: {UnaryOp}
     | '~' {BIT_NOT}
     | '!' {LOGICAL_NOT}
 
+-- FIXME: casts aren't parsing
 cast_exp :: {Exp}
     : unary_exp {$1}
     | '(' type_name ')' cast_exp {CastExp $2 $4}
@@ -197,14 +212,14 @@ shift_exp :: {Exp}
 
 relational_exp :: {Exp}
     : shift_exp {$1}
-    | relational_exp '<' shift_exp {BinaryExp Parser.LT $1 $3}
-    | relational_exp '>' shift_exp {BinaryExp Parser.GT $1 $3}
+    | relational_exp '<' shift_exp {BinaryExp AST.LT $1 $3}
+    | relational_exp '>' shift_exp {BinaryExp AST.GT $1 $3}
     | relational_exp '<=' shift_exp {BinaryExp LTE $1 $3}
     | relational_exp '>=' shift_exp {BinaryExp GTE $1 $3}
 
 equality_exp :: {Exp}
     : relational_exp {$1}
-    | equality_exp '==' relational_exp {BinaryExp Parser.EQ $1 $3}
+    | equality_exp '==' relational_exp {BinaryExp AST.EQ $1 $3}
     | equality_exp '!=' relational_exp {BinaryExp NEQ $1 $3}
 
 and_exp :: {Exp}
@@ -229,7 +244,7 @@ logical_or_exp :: {Exp}
 
 conditional_exp :: {Exp}
     : logical_or_exp {$1}
-    | logical_or_exp '?' exp ':' conditional_exp {ConditionalExp $1 $3 $5}
+    | logical_or_exp '?' expression ':' conditional_exp {ConditionalExp $1 $3 $5}
 
 assignment_exp :: {Exp}
     : conditional_exp {$1}
@@ -248,83 +263,11 @@ assignment_op :: {AssignOp}
     | '^='	{XOR_ASSIGN}
     | '|='	{OR_ASSIGN}
 
-exp :: { Exp }
+expression :: { Exp }
     : assignment_exp {$1}
-    | exp ',' assignment_exp {CommaExp $1 $3}
+    | expression ',' assignment_exp {CommaExp $1 $3}
 
 {
--- FIXME: move to separate module
-data AssignOp =
-    ASSIGN |
-    MULT_ASSIGN |
-    DIV_ASSIGN |
-    MOD_ASSIGN |
-    PLUS_ASSIGN |
-    MINUS_ASSIGN |
-    LSHIFT_ASSIGN |
-    RSHIFT_ASSIGN |
-    AND_ASSIGN |
-    XOR_ASSIGN |
-    OR_ASSIGN
-    deriving (Eq, Show)
-
-data BinOp =
-    LOGICAL_OR |
-    LOGICAL_AND |
-    BIT_OR |
-    BIT_AND |
-    XOR |
-    EQ |
-    NEQ |
-    LT |
-    LTE |
-    GT |
-    GTE |
-    LSHIFT |
-    RSHIFT |
-    PLUS |
-    MINUS |
-    MULT |
-    DIV |
-    MOD
-    deriving (Eq, Show)
-
-data UnaryOp =
-    ADDRESS_OF |
-    DEREF |
-    UNARY_PLUS |
-    UNARY_MINUS |
-    BIT_NOT |
-    LOGICAL_NOT |
-    PRE_INC |
-    POST_INC |
-    PRE_DEC |
-    POST_DEC
-    deriving (Eq, Show)
-
-data Type =
-    Void
-    deriving (Eq, Show)
-
-data Exp =
-    VarExp Token |
-    ConstExp Token |
-    StringConstExp Token |
-    SubscriptExp Exp Exp |
-    FuncallExp Exp [Exp] |
-    StructElt Exp Token |
-    StructDeref Exp Token |
-    CommaExp Exp Exp |
-    AssignExp AssignOp Exp Exp |
-    ConditionalExp Exp Exp Exp |
-    BinaryExp BinOp Exp Exp |
-    UnaryExp UnaryOp Exp |
-    CastExp Type Exp |
-    SizeofValueExp Exp |
-    SizeofTypeExp Type |
-    AlignofExp Exp
-    deriving (Eq, Show)
-
 parseError :: [Token] -> a
 parseError _ = error "Parse error"
 

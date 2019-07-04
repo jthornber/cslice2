@@ -1,6 +1,6 @@
 {
 module Lexer (
-    Lexer.lex
+    cTokens
     ) where
 
 import Token
@@ -18,6 +18,7 @@ $hexDigit = [0-9a-fA-F]
 $alpha = [a-zA-Z]
 
 @intSuffix = [uU][lL]?|[uU](ll|LL)?|[lL][uU]?|ll[uU]?|LL[uU]?|u?
+@s_chars = [^"]*
 
 tokens :-
 
@@ -41,8 +42,8 @@ $white+			;
 "|="		{punc T_BIT_OR_ASSIGN}
 "."		{punc T_DOT}
 "->"		{punc T_ARROW}
-"++"		{punc T_PLUS_PLUS}
-"--"		{punc T_MINUS_MINUS}
+"++"		{punc T_INC}
+"--"		{punc T_DEC}
 "&&"		{punc T_LOGICAL_AND}
 "&"		{punc T_BIT_AND}
 "*"		{punc T_STAR}
@@ -119,6 +120,7 @@ $alpha [$alpha $digit \_]*	{\_ s -> T_IDENTIFIER s}
 [1-9]$digit*@intSuffix		{\_ s -> intToken readDec s}
 0[xX]$hexDigit+@intSuffix	{\_ s -> intToken readHex $ drop 2 s}
 0[1-9]*@intSuffix		{\_ s -> intToken readOct $ drop 1 s}
+\"@s_chars\"			{\_ s -> T_STRING s}
 
 
 {
@@ -159,8 +161,8 @@ readHex = foldl' (\acc n -> acc * 16 + fromChar n) 0
         fromChar = fromJust . charPosMany [('0', '9', 0),
                                            ('a', 'f', 9),
                                            ('A', 'F', 9)]
-    
-lex = getContents >>= print . alexScanTokens
+
+cTokens = alexScanTokens
 
 traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x

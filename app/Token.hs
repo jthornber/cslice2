@@ -63,7 +63,6 @@ data Token =
     T_CLOSE_SQUARE |
     T_COLON |
     T_COMMA |
-    T_DEC |
     T_DIV |
     T_DIV_ASSIGN |
     T_DOT |
@@ -76,6 +75,7 @@ data Token =
     T_HAT |
     T_HAT_ASSIGN |
     T_INC |
+    T_DEC |
     T_LOGICAL_AND |
     T_LOGICAL_OR |
     T_LSHIFT |
@@ -83,7 +83,6 @@ data Token =
     T_LT |
     T_LTE |
     T_MINUS |
-    T_MINUS_MINUS |
     T_MINUS_ASSIGN |
     T_MOD_ASSIGN |
     T_MOD |
@@ -94,7 +93,6 @@ data Token =
     T_OPEN_SQUARE |
     T_PERCENT |
     T_PLUS |
-    T_PLUS_PLUS |
     T_PLUS_ASSIGN |
     T_QUESTION |
     T_RSHIFT |
