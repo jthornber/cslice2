@@ -1,7 +1,7 @@
 name:                cslice2
 version:             0.1.0.0
 github:              "githubuser/cslice2"
-license:             GPL3
+license:             GPL-3
 author:              "Joe Thornber"
 maintainer:          "thornber@redhat.com"
 copyright:           "2019 RedHat UK Ltd"
@@ -10,6 +10,7 @@ extra-source-files:
 - README.md
 - ChangeLog.md
 - app/Lexer.x
+- app/Parser.y
 
 build-tools:
 - alex
