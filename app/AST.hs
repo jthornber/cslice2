@@ -33,7 +33,10 @@ module AST (
     TypeName(..),
 
     Statement(..),
-    BlockItem(..)
+    BlockItem(..),
+
+    TranslationUnit(..),
+    ExternalDeclaration(..)
     ) where
 
 import Token
@@ -273,4 +276,13 @@ data Statement =
 data BlockItem =
     BIDeclaration Declaration |
     BIStatement Statement
+    deriving (Eq, Show)
+
+data TranslationUnit =
+    TranslationUnit [ExternalDeclaration]
+    deriving (Eq, Show)
+
+data ExternalDeclaration =
+    ExternalDeclaration Declaration |
+    FunDef [DeclarationSpecifier] Declarator [Declaration] Statement
     deriving (Eq, Show)

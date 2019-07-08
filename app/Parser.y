@@ -586,6 +586,28 @@ jump_statement :: {Statement}
     | 'break' ';'			{BreakStatement}
     | 'return' expression_opt ';'	{ReturnStatement $2}
 
+------------------------
+-- External definitions
+------------------------
+
+translation_unit :: {TranslationUnit}
+    : external_declarations			{TranslationUnit $ unreverse $1}
+
+external_declarations :: {Reversed ExternalDeclaration}
+    : {- empty -}					{rempty}
+    | external_declarations external_declaration	{rcons $2 $1}
+
+external_declaration :: {ExternalDeclaration}
+    : function_definition	{$1}
+    | declaration		{ExternalDeclaration $1}
+
+function_definition :: {ExternalDeclaration}
+    : declaration_specifiers declarator declaration_list compound_statement	{FunDef $1 $2 (unreverse $3) $4}
+
+declaration_list :: {Reversed Declaration}
+    : {- empty -}			{rempty}
+    | declaration_list declaration	{rcons $2 $1}
+
 {
 parseError :: [Token] -> a
 parseError _ = error "Parse error"
