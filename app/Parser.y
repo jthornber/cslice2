@@ -25,50 +25,50 @@ import Token
 
 %token
 
-auto		{T_AUTO}
-break		{T_BREAK}
-case		{T_CASE}
-char		{T_CHAR}
-const		{T_CONST}
-continue	{T_CONTINUE}
-default		{T_DEFAULT}
-do		{T_DO}
-double		{T_DOUBLE}
-else		{T_ELSE}
-enum		{T_ENUM}
-extern		{T_EXTERN}
-float		{T_FLOAT}
-for		{T_FOR}
-goto		{T_GOTO}
-if		{T_IF}
-inline		{T_INLINE}
-int		{T_INT}
-long		{T_LONG}
-register	{T_REGISTER}
-restrict	{T_RESTRICT}
-return		{T_RETURN}
-short		{T_SHORT}
-signed		{T_SIGNED}
-sizeof		{T_SIZEOF}
-static		{T_STATIC}
-struct		{T_STRUCT}
-switch		{T_SWITCH}
-typedef		{T_TYPEDEF}
-union		{T_UNION}
-unsigned	{T_UNSIGNED}
-void		{T_VOID}
-volatile	{T_VOLATILE}
-while		{T_WHILE}
-alignas		{T_ALIGNAS}
-alignof		{T_ALIGNOF}
-atomic		{T_ATOMIC}
-bool		{T_BOOL}
-complex		{T_COMPLEX}
-generic		{T_GENERIC}
-imaginary	{T_IMAGINARY}
-noreturn	{T_NORETURN}
-static_assert	{T_STATIC_ASSERT}
-thread_local	{T_THREAD_LOCAL}
+'auto'		{T_AUTO}
+'break'		{T_BREAK}
+'case'		{T_CASE}
+'char'		{T_CHAR}
+'const'		{T_CONST}
+'continue'	{T_CONTINUE}
+'default'	{T_DEFAULT}
+'do'		{T_DO}
+'double'	{T_DOUBLE}
+'else'		{T_ELSE}
+'enum'		{T_ENUM}
+'extern'	{T_EXTERN}
+'float'		{T_FLOAT}
+'for'		{T_FOR}
+'goto'		{T_GOTO}
+'if'		{T_IF}
+'inline'	{T_INLINE}
+'int'		{T_INT}
+'long'		{T_LONG}
+'register'	{T_REGISTER}
+'restrict'	{T_RESTRICT}
+'return'	{T_RETURN}
+'short'		{T_SHORT}
+'signed'	{T_SIGNED}
+'sizeof'	{T_SIZEOF}
+'static'	{T_STATIC}
+'struct'	{T_STRUCT}
+'switch'	{T_SWITCH}
+'typedef'	{T_TYPEDEF}
+'union'		{T_UNION}
+'unsigned'	{T_UNSIGNED}
+'void'		{T_VOID}
+'volatile'	{T_VOLATILE}
+'while'		{T_WHILE}
+'alignas'	{T_ALIGNAS}
+'alignof'	{T_ALIGNOF}
+'atomic'	{T_ATOMIC}
+'bool'		{T_BOOL}
+'complex'	{T_COMPLEX}
+'generic'	{T_GENERIC}
+'imaginary'	{T_IMAGINARY}
+'noreturn'	{T_NORETURN}
+'static_assert'	{T_STATIC_ASSERT}
+'thread_local'	{T_THREAD_LOCAL}
 
 identifier_	{T_IDENTIFIER _}
 integer_const	{T_INTEGER _ _}
@@ -177,11 +177,11 @@ unary_exp :: {Exp}
     | '++' unary_exp    {UnaryExp PRE_INC $2}
     | '--' unary_exp    {UnaryExp PRE_INC $2}
     | unary_operator cast_exp {UnaryExp $1 $2}
-    | sizeof unary_exp 	{SizeofValueExp $2}
-    | sizeof '(' type_name ')' {SizeofTypeExp $3}
+    | 'sizeof' unary_exp 	{SizeofValueExp $2}
+    | 'sizeof' '(' type_name ')' {SizeofTypeExp $3}
 
   {-
-    | alignof '(' type_name ')' {AlignofExp $3}
+    | 'alignof' '(' type_name ')' {AlignofExp $3}
    -}
 
 unary_operator :: {UnaryOp}
@@ -274,6 +274,10 @@ expression :: {Exp}
     : assignment_exp {$1}
     | expression ',' assignment_exp {CommaExp $1 $3}
 
+expression_opt :: {Maybe Exp}
+    : {- empty -} 	{Nothing}
+    | expression	{Just $1}
+
 ----------------
 -- Declarations
 ----------------
@@ -308,25 +312,25 @@ init_declarator :: {InitDeclarator}
     | declarator '=' initializer	{InitDeclarator $1 (Just $3)}
 
 storage_class_specifier :: {StorageClass}
-    : typedef		{Typedef}
-    | extern		{Extern}
-    | static		{Static}
-    | thread_local 	{ThreadLocal}
-    | auto		{Auto}
-    | register		{Register}
+    : 'typedef'		{Typedef}
+    | 'extern'		{Extern}
+    | 'static'		{Static}
+    | 'thread_local' 	{ThreadLocal}
+    | 'auto'		{Auto}
+    | 'register'	{Register}
 
 type_specifier :: {TypeSpecifier}
-    : void		{Void}
-    | char		{Char}
-    | short		{Short}
-    | int		{Int}
-    | long		{Long}
-    | float		{Float}
-    | double		{Double}
-    | signed		{Signed}
-    | unsigned		{Unsigned}
-    | bool		{Bool}
-    | complex		{Complex}
+    : 'void'		{Void}
+    | 'char'		{Char}
+    | 'short'		{Short}
+    | 'int'		{Int}
+    | 'long'		{Long}
+    | 'float'		{Float}
+    | 'double'		{Double}
+    | 'signed'		{Signed}
+    | 'unsigned'	{Unsigned}
+    | 'bool'		{Bool}
+    | 'complex'		{Complex}
     | struct_or_union_specifier		{$1}
     | enum_specifier			{$1}
     | typedef_name			{TSTypedefName $1}
@@ -345,8 +349,8 @@ identifier_opt :: {Maybe Identifier}
     | identifier	{Just $1}
 
 struct_or_union :: {StructType}
-    : struct	{Struct}
-    | union	{Union}
+    : 'struct'	{Struct}
+    | 'union'	{Union}
 
 struct_declaration_list :: {Reversed StructDeclaration}
     : struct_declaration				{Reversed [$1]}
@@ -381,9 +385,9 @@ struct_declarator :: {StructDeclarator}
     | ':' const_exp			{StructDeclaratorNoDecl $2}
 
 enum_specifier :: {TypeSpecifier}
-    : enum identifier_opt '{' enumerator_list '}'	{EnumDefSpecifier $2 $ unreverse $4}
-    | enum identifier_opt '{' enumerator_list ',' '}'	{EnumDefSpecifier $2 $ unreverse $4}
-    | enum identifier					{EnumRefSpecifier $2}
+    : 'enum' identifier_opt '{' enumerator_list '}'	{EnumDefSpecifier $2 $ unreverse $4}
+    | 'enum' identifier_opt '{' enumerator_list ',' '}'	{EnumDefSpecifier $2 $ unreverse $4}
+    | 'enum' identifier					{EnumRefSpecifier $2}
 
 enumerator_list :: {Reversed Enumerator}
     : enumerator			{Reversed [$1]}
@@ -400,22 +404,22 @@ enumeration_constant :: {Identifier}
 
 {-
 atomic_type_specifier
-    : atomic '(' type_name ')'
+    : 'atomic' '(' type_name ')'
  -}
 
 type_qualifier :: {TypeQualifier}
-    : const	{Const}
-    | restrict	{Restrict}
-    | volatile	{Volatile}
-    | atomic	{Atomic}
+    : 'const'		{Const}
+    | 'restrict'	{Restrict}
+    | 'volatile'	{Volatile}
+    | 'atomic'		{Atomic}
 
 function_specifier :: {FunctionSpecifier}
-    : inline	{Inline}
-    | noreturn	{NoReturn}
+    : 'inline'		{Inline}
+    | 'noreturn'	{NoReturn}
 
 alignment_specifier :: {AlignmentSpecifier}
-    : alignas '(' type_name ')'		{AlignAsType $3}
-    | alignas '(' const_exp ')'		{AlignAsConst $3}
+    : 'alignas' '(' type_name ')'		{AlignAsType $3}
+    | 'alignas' '(' const_exp ')'		{AlignAsConst $3}
 
 declarator :: {Declarator}
     : pointer_opt direct_declarator	 {Declarator $1 $2}
@@ -428,8 +432,8 @@ direct_declarator :: {DirectDeclarator}
     : identifier		{DDIdentifier $1}
     | '(' declarator ')'	{DDNested $2}
     | direct_declarator '[' type_qualifier_list_star assignment_exp_opt ']' 	{DDArray $1 (unreverse $3) $4 False False}
-    | direct_declarator '[' static type_qualifier_list_star assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
-    | direct_declarator '[' type_qualifier_list static assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
+    | direct_declarator '[' 'static' type_qualifier_list_star assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
+    | direct_declarator '[' type_qualifier_list 'static' assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list_star '*' ']'			{DDArray $1 (unreverse $3) Nothing False True}
     | direct_declarator '(' parameter_type_list ')'				{DDFun $1 $3}
     | direct_declarator '(' identifier_list_star ')'				{DDFunOdd $1 (unreverse $3)}
@@ -488,8 +492,8 @@ abstract_declarator_opt :: {Maybe AbstractDeclarator}
 direct_abstract_declarator :: {DirectAbstractDeclarator}
     : '(' abstract_declarator ')'	{DANested $2}
     | direct_abstract_declarator_opt '[' type_qualifier_list_star assignment_exp_opt ']'		{DAArray $1 (unreverse $3) $4 False}
-    | direct_abstract_declarator_opt '[' static type_qualifier_list_star assignment_exp ']'		{DAArray $1 (unreverse $4) (Just $5) True}
-    | direct_abstract_declarator_opt '[' type_qualifier_list static assignment_exp ']'			{DAArray $1 (unreverse $3) (Just $5) False}
+    | direct_abstract_declarator_opt '[' 'static' type_qualifier_list_star assignment_exp ']'		{DAArray $1 (unreverse $4) (Just $5) True}
+    | direct_abstract_declarator_opt '[' type_qualifier_list 'static' assignment_exp ']'			{DAArray $1 (unreverse $3) (Just $5) False}
     | direct_abstract_declarator_opt '[' '*' ']'							{DAArrayStar $1}
     | direct_abstract_declarator_opt '(' parameter_type_list_opt ')'					{DAFun $1 $3}
 
@@ -526,8 +530,61 @@ designator :: {Designator}
 
   {-
 static_assert_declaration
-    : static_assert '(' const_exp ',' string_const ')' ';'
+    : 'static_assert' '(' const_exp ',' string_const ')' ';'
    -}
+
+--------------
+-- Statements
+--------------
+
+statement :: {Statement}
+    : labelled_statement	{$1}
+    | compound_statement	{$1}
+    | expression_statement	{$1}
+    | selection_statement	{$1}
+    | iteration_statement	{$1}
+    | jump_statement		{$1}
+
+labelled_statement :: {Statement}
+    : identifier ':' statement		{LabelStatement $1 $3}
+    | 'case' const_exp ':' statement	{CaseStatement $2 $4}
+    | 'default' ':' statement		{DefaultStatement $3}
+
+compound_statement :: {Statement}
+    : '{' block_item_list_opt '}'	{CompoundStatement $ unreverse $2}
+
+block_item_list :: {Reversed BlockItem}
+    : block_item			{rcons $1 rempty}
+    | block_item_list block_item	{rcons $2 $1}
+
+block_item_list_opt :: {Reversed BlockItem}
+    : {- empty -}		{rempty}
+    | block_item_list		{$1}
+
+block_item :: {BlockItem}
+    : declaration	{BIDeclaration $1}
+    | statement		{BIStatement $1}
+
+expression_statement :: {Statement}
+    : expression ';'	{ExpressionStatement $1}
+    | ';'		{EmptyStatement}
+
+selection_statement :: {Statement}
+    : 'if' '(' expression ')' statement				{IfStatement $3 $5 Nothing}
+    | 'if' '(' expression ')' statement 'else' statement	{IfStatement $3 $5 (Just $7)}
+    | 'switch' '(' expression ')' statement			{SwitchStatement $3 $5}
+
+iteration_statement :: {Statement}
+    : 'while' '(' expression ')' statement			{WhileStatement $3 $5}
+    | 'do' statement 'while' '(' expression ')' ';'		{DoStatement $2 $5}
+    | 'for' '(' expression_opt ';' expression_opt ';' expression_opt ')' statement		{ForStatement Nothing $3 $5 $7 $9}
+    | 'for' '(' declaration expression_opt ';' expression_opt ';' expression_opt ')' statement	{ForStatement (Just $3) $4 $6 $8 $10}
+
+jump_statement :: {Statement}
+    : 'goto' identifier ';'		{GotoStatement $2}
+    | 'continue' ';'			{ContinueStatement}
+    | 'break' ';'			{BreakStatement}
+    | 'return' expression_opt ';'	{ReturnStatement $2}
 
 {
 parseError :: [Token] -> a

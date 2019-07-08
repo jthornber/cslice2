@@ -30,7 +30,10 @@ module AST (
     ParameterDeclaration(..),
     AbstractDeclarator(..),
     DirectAbstractDeclarator(..),
-    TypeName(..)
+    TypeName(..),
+
+    Statement(..),
+    BlockItem(..)
     ) where
 
 import Token
@@ -245,5 +248,29 @@ data TypeName =
     TypeName [SpecifierQualifier] (Maybe AbstractDeclarator)
     deriving (Eq, Show)
 
+-- FIXME: Do we need this?
 data Type = Type
+    deriving (Eq, Show)
+
+data Statement =
+    LabelStatement Identifier Statement |
+    CaseStatement Exp Statement |
+    DefaultStatement Statement |
+    CompoundStatement [BlockItem] |
+    ExpressionStatement Exp |
+    IfStatement Exp Statement (Maybe Statement) |
+    SwitchStatement Exp Statement |
+    WhileStatement Exp Statement |
+    DoStatement Statement Exp |
+    ForStatement (Maybe Declaration) (Maybe Exp) (Maybe Exp) (Maybe Exp) Statement |
+    GotoStatement Identifier |
+    ContinueStatement |
+    BreakStatement |
+    ReturnStatement (Maybe Exp) |
+    EmptyStatement
+    deriving (Eq, Show)
+
+data BlockItem =
+    BIDeclaration Declaration |
+    BIStatement Statement
     deriving (Eq, Show)
