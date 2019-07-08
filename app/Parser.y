@@ -9,6 +9,7 @@ module Parser (
     ) where
 
 import AST
+import Control.Monad
 import Token
 }
 
@@ -69,7 +70,7 @@ noreturn	{T_NORETURN}
 static_assert	{T_STATIC_ASSERT}
 thread_local	{T_THREAD_LOCAL}
 
-identifier	{T_IDENTIFIER _}
+identifier_	{T_IDENTIFIER _}
 integer_const	{T_INTEGER _ _}
 string_const	{T_STRING _}
 
@@ -124,9 +125,11 @@ string_const	{T_STRING _}
 
 %%
 
--- FIXME: finish
-type_name :: {Type}
-    : identifier	{Void}
+identifier :: {Identifier}
+    : identifier_	{toIdentifier $1}
+
+const_exp :: {Exp}
+    : integer_const	{ConstExp $1}
 
 primary_exp :: {Exp}
     : identifier		{VarExp $1}
@@ -249,6 +252,10 @@ conditional_exp :: {Exp}
 assignment_exp :: {Exp}
     : conditional_exp {$1}
     | unary_exp assignment_op assignment_exp {AssignExp $2 $1 $3}
+
+assignment_exp_opt :: {Maybe Exp}
+    : {- empty -} 	{Nothing}
+    | assignment_exp	{Just $1}
     
 assignment_op :: {AssignOp}
     : '='	{ASSIGN}
@@ -263,9 +270,264 @@ assignment_op :: {AssignOp}
     | '^='	{XOR_ASSIGN}
     | '|='	{OR_ASSIGN}
 
-expression :: { Exp }
+expression :: {Exp}
     : assignment_exp {$1}
     | expression ',' assignment_exp {CommaExp $1 $3}
+
+----------------
+-- Declarations
+----------------
+
+declaration :: {Declaration}
+    : declaration_specifiers init_declarator_list ';' {Declaration $1 (unreverse $2)}
+
+{-
+    | static_assert_declaration
+-}
+
+declaration_specifiers_star :: {Reversed DeclarationSpecifier}
+    : {- empty -}		{rempty}
+    | declaration_specifiers_star declaration_specifier		{rcons $2 $1}
+
+declaration_specifiers :: {[DeclarationSpecifier]}
+    : declaration_specifier declaration_specifiers_star	{$1 : unreverse $2}
+
+declaration_specifier :: {DeclarationSpecifier}
+    : storage_class_specifier	{DSStorageClass $1}
+    | type_specifier		{DSTypeSpecifier $1}
+    | type_qualifier		{DSTypeQualifier $1}
+    | function_specifier	{DSFunctionSpecifier $1}
+    | alignment_specifier	{DSAlignmentSpecifier $1}
+
+init_declarator_list :: {Reversed InitDeclarator}
+    : {- empty -}		{rempty}
+    | init_declarator_list ',' init_declarator	{rcons $3 $1}
+
+init_declarator :: {InitDeclarator}
+    : declarator			{InitDeclarator $1 Nothing}
+    | declarator '=' initializer	{InitDeclarator $1 (Just $3)}
+
+storage_class_specifier :: {StorageClass}
+    : typedef		{Typedef}
+    | extern		{Extern}
+    | static		{Static}
+    | thread_local 	{ThreadLocal}
+    | auto		{Auto}
+    | register		{Register}
+
+type_specifier :: {TypeSpecifier}
+    : void		{Void}
+    | char		{Char}
+    | short		{Short}
+    | int		{Int}
+    | long		{Long}
+    | float		{Float}
+    | double		{Double}
+    | signed		{Signed}
+    | unsigned		{Unsigned}
+    | bool		{Bool}
+    | complex		{Complex}
+    | struct_or_union_specifier		{$1}
+    | enum_specifier			{$1}
+    | typedef_name			{TSTypedefName $1}
+
+  {-
+    | atomic_type_specifier		{$1}
+   -}
+
+
+struct_or_union_specifier :: {TypeSpecifier}
+    : struct_or_union identifier_opt '{' struct_declaration_list '}' 	{StructOrUnionSpecifier $1 $2 (Just $ unreverse $4)}
+    | struct_or_union identifier					{StructOrUnionSpecifier $1 (Just $2) Nothing}
+
+identifier_opt :: {Maybe Identifier}
+    : {- empty -} 	{Nothing}
+    | identifier	{Just $1}
+
+struct_or_union :: {StructType}
+    : struct	{Struct}
+    | union	{Union}
+
+struct_declaration_list :: {Reversed StructDeclaration}
+    : struct_declaration				{Reversed [$1]}
+    | struct_declaration_list struct_declaration	{rcons $2 $1}
+
+struct_declaration :: {StructDeclaration}
+    : specifier_qualifier_list struct_declarator_list_star ';'	{StructDeclaration (unreverse $1) (unreverse $2)}
+
+{-
+    | static_assert_declaration
+-}
+
+specifier_qualifier_list :: {Reversed SpecifierQualifier}
+    : type_specifier specifier_qualifier_list_star	{rcons (SQTypeSpecifier $1) $2}
+    | type_qualifier specifier_qualifier_list_star	{rcons (SQTypeQualifier $1) $2}
+
+specifier_qualifier_list_star :: {Reversed SpecifierQualifier}
+    : {- empty -}	{Reversed []}
+    | specifier_qualifier_list	{$1}
+
+struct_declarator_list :: {Reversed StructDeclarator}
+    : struct_declarator					{Reversed [$1]}
+    | struct_declarator_list ',' struct_declarator 	{rcons $3 $1}
+
+struct_declarator_list_star :: {Reversed StructDeclarator}
+    : {- empty -}		{rempty}
+    | struct_declarator_list	{$1}
+
+struct_declarator :: {StructDeclarator}
+    : declarator			{StructDeclarator $1 Nothing}
+    | declarator ':' const_exp		{StructDeclarator $1 (Just $3)}
+    | ':' const_exp			{StructDeclaratorNoDecl $2}
+
+enum_specifier :: {TypeSpecifier}
+    : enum identifier_opt '{' enumerator_list '}'	{EnumDefSpecifier $2 $ unreverse $4}
+    | enum identifier_opt '{' enumerator_list ',' '}'	{EnumDefSpecifier $2 $ unreverse $4}
+    | enum identifier					{EnumRefSpecifier $2}
+
+enumerator_list :: {Reversed Enumerator}
+    : enumerator			{Reversed [$1]}
+    | enumerator_list ',' enumerator	{rcons $3 $1}
+
+enumerator :: {Enumerator}
+    : enumeration_constant				{Enumerator $1 Nothing}
+    | enumeration_constant '=' const_exp		{Enumerator $1 (Just $3)}
+
+-- FIXME: not sure how an enumeration constant is different from 
+-- an identifier.
+enumeration_constant :: {Identifier}
+    : identifier {$1}
+
+{-
+atomic_type_specifier
+    : atomic '(' type_name ')'
+ -}
+
+type_qualifier :: {TypeQualifier}
+    : const	{Const}
+    | restrict	{Restrict}
+    | volatile	{Volatile}
+    | atomic	{Atomic}
+
+function_specifier :: {FunctionSpecifier}
+    : inline	{Inline}
+    | noreturn	{NoReturn}
+
+alignment_specifier :: {AlignmentSpecifier}
+    : alignas '(' type_name ')'		{AlignAsType $3}
+    | alignas '(' const_exp ')'		{AlignAsConst $3}
+
+declarator :: {Declarator}
+    : pointer_opt direct_declarator	 {Declarator $1 $2}
+
+declarator_opt :: {Maybe Declarator}
+    : {- empty -}	{Nothing}
+    | declarator	{Just $1}
+
+direct_declarator :: {DirectDeclarator}
+    : identifier		{DDIdentifier $1}
+    | '(' declarator ')'	{DDNested $2}
+    | direct_declarator '[' type_qualifier_list_star assignment_exp_opt ']' 	{DDArray $1 (unreverse $3) $4 False False}
+    | direct_declarator '[' static type_qualifier_list_star assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
+    | direct_declarator '[' type_qualifier_list static assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
+    | direct_declarator '[' type_qualifier_list_star '*' ']'			{DDArray $1 (unreverse $3) Nothing False True}
+    | direct_declarator '(' parameter_type_list ')'				{DDFun $1 $3}
+    | direct_declarator '(' identifier_list_star ')'				{DDFunOdd $1 (unreverse $3)}
+
+pointer :: {Pointer}
+    : '*' type_qualifier_list_star		{Pointer (unreverse $2) Nothing}
+    | '*' type_qualifier_list_star pointer	{Pointer (unreverse $2) (Just $3)}
+
+pointer_opt ::	{Maybe Pointer}
+    : {- empty -}	{Nothing}
+    | pointer		{Just $1}
+
+type_qualifier_list :: {Reversed TypeQualifier}
+    : type_qualifier				{Reversed [$1]}
+    | type_qualifier_list type_qualifier	{rcons $2 $1}
+
+type_qualifier_list_star :: {Reversed TypeQualifier}
+    : {- empty -}		{Reversed []}
+    | type_qualifier_list	{$1}
+
+parameter_type_list :: {ParameterTypeList}
+    : parameter_list			{ParameterTypeList (unreverse $1) False}
+    | parameter_list ',' '...'		{ParameterTypeList (unreverse $1) True}
+
+parameter_type_list_opt :: {Maybe ParameterTypeList}
+    : {- empty -}		{Nothing}
+    | parameter_type_list	{Just $1}
+
+parameter_list :: {Reversed ParameterDeclaration}
+    : parameter_declaration				{Reversed [$1]}
+    | parameter_list ',' parameter_declaration		{rcons $3 $1}
+
+parameter_declaration :: {ParameterDeclaration}
+    : declaration_specifiers declarator			{PDDeclarator $1 $2}
+    | declaration_specifiers abstract_declarator_opt	{PDAbstract $1 $2}
+
+identifier_list	:: {Reversed Identifier}
+    : identifier			{Reversed [$1]}
+    | identifier_list ',' identifier	{rcons $3 $1}
+
+identifier_list_star :: {Reversed Identifier}
+    : {- empty -} 	{rempty}
+    | identifier_list 	{$1}
+
+type_name :: {TypeName}
+    : specifier_qualifier_list abstract_declarator_opt		{TypeName (unreverse $1) $2}
+
+abstract_declarator :: {AbstractDeclarator}
+    : pointer					{AbstractPointer $1}
+    | pointer_opt direct_abstract_declarator	{AbstractDeclarator $1 $2}
+
+abstract_declarator_opt :: {Maybe AbstractDeclarator}
+    : {- empty -}		{Nothing}
+    | abstract_declarator	{Just $1}
+
+direct_abstract_declarator :: {DirectAbstractDeclarator}
+    : '(' abstract_declarator ')'	{DANested $2}
+    | direct_abstract_declarator_opt '[' type_qualifier_list_star assignment_exp_opt ']'		{DAArray $1 (unreverse $3) $4 False}
+    | direct_abstract_declarator_opt '[' static type_qualifier_list_star assignment_exp ']'		{DAArray $1 (unreverse $4) (Just $5) True}
+    | direct_abstract_declarator_opt '[' type_qualifier_list static assignment_exp ']'			{DAArray $1 (unreverse $3) (Just $5) False}
+    | direct_abstract_declarator_opt '[' '*' ']'							{DAArrayStar $1}
+    | direct_abstract_declarator_opt '(' parameter_type_list_opt ')'					{DAFun $1 $3}
+
+direct_abstract_declarator_opt :: {Maybe DirectAbstractDeclarator}
+    : {- empty -}			{Nothing}
+    | direct_abstract_declarator	{Just $1}
+
+typedef_name :: {Identifier}
+    : identifier	{$1}
+
+initializer :: {Initializer}
+    : assignment_exp			{InitAssign $1}
+    | '{' initializer_list '}'		{InitList (unreverse $2)}
+    | '{' initializer_list ',' '}'	{InitList (unreverse $2)}
+
+initializer_list :: {Reversed InitializerPair}
+    : designation_opt initializer				{Reversed [InitializerPair $1 $2]}
+    | initializer_list ',' designation_opt initializer		{rcons (InitializerPair $3 $4) $1}
+
+designation :: {[Designator]}
+    : designator_list '='	{unreverse $1}
+
+designation_opt :: {Maybe [Designator]}
+    : {- empty -}		{Nothing}
+    | designation		{Just $1}
+
+designator_list :: {Reversed Designator}
+    : designator			{Reversed [$1]}
+    | designator_list designator	{rcons $2 $1}
+
+designator :: {Designator}
+    : '[' const_exp ']'			{SubscriptDesignator $2}
+    | '.' identifier			{StructDesignator $2}
+
+  {-
+static_assert_declaration
+    : static_assert '(' const_exp ',' string_const ')' ';'
+   -}
 
 {
 parseError :: [Token] -> a
@@ -273,9 +535,16 @@ parseError _ = error "Parse error"
 
 data Reversed a = Reversed [a]
 
+rempty :: Reversed a
+rempty = Reversed []
+
 rcons :: a -> Reversed a -> Reversed a
 rcons x (Reversed xs) = Reversed (x:xs)
 
 unreverse :: Reversed a -> [a]
 unreverse (Reversed xs) = reverse xs
+
+toIdentifier :: Token -> Identifier
+toIdentifier (T_IDENTIFIER n) = Identifier n
+toIdentifier _ = error "not an identifier"
 }
