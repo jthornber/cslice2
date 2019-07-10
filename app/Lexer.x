@@ -1,6 +1,9 @@
 {
 module Lexer (
-    cTokens
+    Alex(..),
+    alexError,
+    runAlex,
+    lexStep
     ) where
 
 import Token
@@ -11,7 +14,7 @@ import Data.List
 import Data.Maybe
 }
 
-%wrapper "posn"
+%wrapper "monad"
 
 $digit = 0-9
 $hexDigit = [0-9a-fA-F]
@@ -116,15 +119,22 @@ _Noreturn	{keyword T_NORETURN}
 _Static_assert  {keyword T_STATIC_ASSERT}
 _Thread_local   {keyword T_THREAD_LOCAL}
 
-$alpha [$alpha $digit \_]*	{\_ s -> T_IDENTIFIER s}
-[1-9]$digit*@intSuffix		{\_ s -> intToken readDec s}
-0[xX]$hexDigit+@intSuffix	{\_ s -> intToken readHex $ drop 2 s}
-0[1-9]*@intSuffix		{\_ s -> intToken readOct $ drop 1 s}
-\"@s_chars\"			{\_ s -> T_STRING s}
+$alpha [$alpha $digit \_]*	{withS (return . T_IDENTIFIER)}
+[1-9]$digit*@intSuffix		{withS (return . intToken readDec)}
+0[xX]$hexDigit+@intSuffix	{withS (return . intToken readHex . drop 2)}
+0[1-9]*@intSuffix		{withS (return . intToken readOct . drop 1)}
+\"@s_chars\"			{withS (return . T_STRING)}
 
 
 {
-keyword v _ _ = v
+lexStep :: (Token -> Alex a) -> Alex a
+lexStep k = do
+    token <- alexMonadScan
+    k token
+
+withS fn (_, _, _, s) len = fn (take len s)
+
+keyword v _ _ = return v
 punc = keyword
 
 charPos ::Char -> Char -> Char -> Maybe Integer
@@ -162,9 +172,8 @@ readHex = foldl' (\acc n -> acc * 16 + fromChar n) 0
                                            ('a', 'f', 9),
                                            ('A', 'F', 9)]
 
-cTokens = alexScanTokens
-
 traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x
 
+alexEOF = return T_EOF
 }

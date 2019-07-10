@@ -5,12 +5,16 @@ module Parser (
     unary_exp,
     cast_exp,
     additive_exp,
-    conditional_exp
+    conditional_exp,
+
+    statement,
+    translation_unit
     ) where
 
 import AST
 import Control.Monad
 import Token
+import Lexer
 }
 
 %name expression expression
@@ -19,7 +23,11 @@ import Token
 %name cast_exp cast_exp
 %name additive_exp additive_exp
 %name conditional_exp conditional_exp
+%name statement statement
+%name translation_unit translation_unit
 
+%lexer {lexStep} {T_EOF}
+%monad {Alex}
 %tokentype {Token}
 %error { parseError }
 
@@ -493,7 +501,7 @@ direct_abstract_declarator :: {DirectAbstractDeclarator}
     : '(' abstract_declarator ')'	{DANested $2}
     | direct_abstract_declarator_opt '[' type_qualifier_list_star assignment_exp_opt ']'		{DAArray $1 (unreverse $3) $4 False}
     | direct_abstract_declarator_opt '[' 'static' type_qualifier_list_star assignment_exp ']'		{DAArray $1 (unreverse $4) (Just $5) True}
-    | direct_abstract_declarator_opt '[' type_qualifier_list 'static' assignment_exp ']'			{DAArray $1 (unreverse $3) (Just $5) False}
+    | direct_abstract_declarator_opt '[' type_qualifier_list 'static' assignment_exp ']'		{DAArray $1 (unreverse $3) (Just $5) False}
     | direct_abstract_declarator_opt '[' '*' ']'							{DAArrayStar $1}
     | direct_abstract_declarator_opt '(' parameter_type_list_opt ')'					{DAFun $1 $3}
 
@@ -609,8 +617,8 @@ declaration_list :: {Reversed Declaration}
     | declaration_list declaration	{rcons $2 $1}
 
 {
-parseError :: [Token] -> a
-parseError _ = error "Parse error"
+parseError :: Token -> Alex a
+parseError _ = alexError "Parse error"
 
 data Reversed a = Reversed [a]
 

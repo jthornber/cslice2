@@ -4,8 +4,10 @@ import AST
 import Lexer
 import Parser
 
+parse s = runAlex s translation_unit
+
 main :: IO ()
 main = do
-    toks <- getContents >>= pure . cTokens
-    print toks
-    print . expression $ toks
+    input <- getContents
+    print . parse $ input
+

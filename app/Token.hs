@@ -100,6 +100,7 @@ data Token =
     T_SEMI |
     T_STAR |
     T_STAR_ASSIGN |
-    T_TILDE
+    T_TILDE |
+    T_EOF
     deriving (Eq, Show)
 
