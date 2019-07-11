@@ -40,6 +40,7 @@ module AST (
     ) where
 
 import Token
+import Lexer
 
 data Identifier =
     Identifier String
@@ -95,8 +96,8 @@ data UnaryOp =
 
 data Exp =
     VarExp Identifier |
-    ConstExp Token |
-    StringConstExp Token |
+    ConstExp (Token AlexPosn) |
+    StringConstExp (Token AlexPosn) |
     SubscriptExp Exp Exp |
     FuncallExp Exp [Exp] |
     StructElt Exp Identifier |

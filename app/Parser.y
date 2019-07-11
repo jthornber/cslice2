@@ -26,110 +26,110 @@ import Lexer
 %name statement statement
 %name translation_unit translation_unit
 
-%lexer {lexStep} {T_EOF}
+%lexer {lexStep} {T_EOF _}
 %monad {Alex}
-%tokentype {Token}
+%tokentype {Token AlexPosn}
 %error { parseError }
 
 %token
 
-'auto'		{T_AUTO}
-'break'		{T_BREAK}
-'case'		{T_CASE}
-'char'		{T_CHAR}
-'const'		{T_CONST}
-'continue'	{T_CONTINUE}
-'default'	{T_DEFAULT}
-'do'		{T_DO}
-'double'	{T_DOUBLE}
-'else'		{T_ELSE}
-'enum'		{T_ENUM}
-'extern'	{T_EXTERN}
-'float'		{T_FLOAT}
-'for'		{T_FOR}
-'goto'		{T_GOTO}
-'if'		{T_IF}
-'inline'	{T_INLINE}
-'int'		{T_INT}
-'long'		{T_LONG}
-'register'	{T_REGISTER}
-'restrict'	{T_RESTRICT}
-'return'	{T_RETURN}
-'short'		{T_SHORT}
-'signed'	{T_SIGNED}
-'sizeof'	{T_SIZEOF}
-'static'	{T_STATIC}
-'struct'	{T_STRUCT}
-'switch'	{T_SWITCH}
-'typedef'	{T_TYPEDEF}
-'union'		{T_UNION}
-'unsigned'	{T_UNSIGNED}
-'void'		{T_VOID}
-'volatile'	{T_VOLATILE}
-'while'		{T_WHILE}
-'alignas'	{T_ALIGNAS}
-'alignof'	{T_ALIGNOF}
-'atomic'	{T_ATOMIC}
-'bool'		{T_BOOL}
-'complex'	{T_COMPLEX}
-'generic'	{T_GENERIC}
-'imaginary'	{T_IMAGINARY}
-'noreturn'	{T_NORETURN}
-'static_assert'	{T_STATIC_ASSERT}
-'thread_local'	{T_THREAD_LOCAL}
+'auto'		{T_AUTO _}
+'break'		{T_BREAK _}
+'case'		{T_CASE _}
+'char'		{T_CHAR _}
+'const'		{T_CONST _}
+'continue'	{T_CONTINUE _}
+'default'	{T_DEFAULT _}
+'do'		{T_DO _}
+'double'	{T_DOUBLE _}
+'else'		{T_ELSE _}
+'enum'		{T_ENUM _}
+'extern'	{T_EXTERN _}
+'float'		{T_FLOAT _}
+'for'		{T_FOR _}
+'goto'		{T_GOTO _}
+'if'		{T_IF _}
+'inline'	{T_INLINE _}
+'int'		{T_INT _}
+'long'		{T_LONG _}
+'register'	{T_REGISTER _}
+'restrict'	{T_RESTRICT _}
+'return'	{T_RETURN _}
+'short'		{T_SHORT _}
+'signed'	{T_SIGNED _}
+'sizeof'	{T_SIZEOF _}
+'static'	{T_STATIC _}
+'struct'	{T_STRUCT _}
+'switch'	{T_SWITCH _}
+'typedef'	{T_TYPEDEF _}
+'union'		{T_UNION _}
+'unsigned'	{T_UNSIGNED _}
+'void'		{T_VOID _}
+'volatile'	{T_VOLATILE _}
+'while'		{T_WHILE _}
+'alignas'	{T_ALIGNAS _}
+'alignof'	{T_ALIGNOF _}
+'atomic'	{T_ATOMIC _}
+'bool'		{T_BOOL _}
+'complex'	{T_COMPLEX _}
+'generic'	{T_GENERIC _}
+'imaginary'	{T_IMAGINARY _}
+'noreturn'	{T_NORETURN _}
+'static_assert'	{T_STATIC_ASSERT _}
+'thread_local'	{T_THREAD_LOCAL _}
 
-identifier_	{T_IDENTIFIER _}
-integer_const	{T_INTEGER _ _}
-string_const	{T_STRING _}
+identifier_	{T_IDENTIFIER _ _}
+integer_const	{T_INTEGER _ _ _}
+string_const	{T_STRING _ _}
 
-'->'		{T_ARROW}
-'='		{T_ASSIGN}
-'&'		{T_BIT_AND}
-'&='		{T_BIT_AND_ASSIGN}
-'|'		{T_BIT_OR}
-'|='		{T_BIT_OR_ASSIGN}
-'}'		{T_CLOSE_CURLY}
-')'		{T_CLOSE_PAREN}
-']'		{T_CLOSE_SQUARE}
-':'		{T_COLON}
-','		{T_COMMA}
-'--'		{T_DEC}
-'/'		{T_DIV}
-'/='		{T_DIV_ASSIGN}
-'.'		{T_DOT}
-'...'		{T_ELIPSIS}
-'=='		{T_EQ}
-'>'		{T_GT}
-'>='		{T_GTE}
-'#'		{T_HASH}
-'##'		{T_HASH_HASH}
-'^'		{T_HAT}
-'^='		{T_HAT_ASSIGN}
-'++'		{T_INC}
-'&&'		{T_LOGICAL_AND}
-'||'		{T_LOGICAL_OR}
-'<<'		{T_LSHIFT}
-'<<='		{T_LSHIFT_ASSIGN}
-'<'		{T_LT}
-'<='		{T_LTE}
-'-'		{T_MINUS}
-'-='		{T_MINUS_ASSIGN}
-'%='		{T_MOD_ASSIGN}
-'%'		{T_MOD}
-'!='		{T_NEQ}
-'!'		{T_NOT}
-'{'		{T_OPEN_CURLY}
-'('		{T_OPEN_PAREN}
-'['		{T_OPEN_SQUARE}
-'+'		{T_PLUS}
-'+='		{T_PLUS_ASSIGN}
-'?'		{T_QUESTION}
-'>>'		{T_RSHIFT}
-'>>='		{T_RSHIFT_ASSIGN}
-';'		{T_SEMI}
-'*'		{T_STAR}
-'*='		{T_STAR_ASSIGN}
-'~'		{T_TILDE}
+'->'		{T_ARROW _}
+'='		{T_ASSIGN _}
+'&'		{T_BIT_AND _}
+'&='		{T_BIT_AND_ASSIGN _}
+'|'		{T_BIT_OR _}
+'|='		{T_BIT_OR_ASSIGN _}
+'}'		{T_CLOSE_CURLY _}
+')'		{T_CLOSE_PAREN _}
+']'		{T_CLOSE_SQUARE _}
+':'		{T_COLON _}
+','		{T_COMMA _}
+'--'		{T_DEC _}
+'/'		{T_DIV _}
+'/='		{T_DIV_ASSIGN _}
+'.'		{T_DOT _}
+'...'		{T_ELIPSIS _}
+'=='		{T_EQ _}
+'>'		{T_GT _}
+'>='		{T_GTE _}
+'#'		{T_HASH _}
+'##'		{T_HASH_HASH _}
+'^'		{T_HAT _}
+'^='		{T_HAT_ASSIGN _}
+'++'		{T_INC _}
+'&&'		{T_LOGICAL_AND _}
+'||'		{T_LOGICAL_OR _}
+'<<'		{T_LSHIFT _}
+'<<='		{T_LSHIFT_ASSIGN _}
+'<'		{T_LT _}
+'<='		{T_LTE _}
+'-'		{T_MINUS _}
+'-='		{T_MINUS_ASSIGN _}
+'%='		{T_MOD_ASSIGN _}
+'%'		{T_MOD _}
+'!='		{T_NEQ _}
+'!'		{T_NOT _}
+'{'		{T_OPEN_CURLY _}
+'('		{T_OPEN_PAREN _}
+'['		{T_OPEN_SQUARE _}
+'+'		{T_PLUS _}
+'+='		{T_PLUS_ASSIGN _}
+'?'		{T_QUESTION _}
+'>>'		{T_RSHIFT _}
+'>>='		{T_RSHIFT_ASSIGN _}
+';'		{T_SEMI _}
+'*'		{T_STAR _}
+'*='		{T_STAR_ASSIGN _}
+'~'		{T_TILDE _}
 
 %%
 
@@ -617,8 +617,10 @@ declaration_list :: {Reversed Declaration}
     | declaration_list declaration	{rcons $2 $1}
 
 {
-parseError :: Token -> Alex a
-parseError _ = alexError "Parse error"
+parseError :: Token AlexPosn -> Alex a
+parseError t = alexError $ "Parse error at line " ++ (show line) ++ ":" ++ (show col)
+    where
+        (AlexPn b line col) = getAttr t
 
 data Reversed a = Reversed [a]
 
@@ -631,7 +633,7 @@ rcons x (Reversed xs) = Reversed (x:xs)
 unreverse :: Reversed a -> [a]
 unreverse (Reversed xs) = reverse xs
 
-toIdentifier :: Token -> Identifier
-toIdentifier (T_IDENTIFIER n) = Identifier n
+toIdentifier :: Token AlexPosn -> Identifier
+toIdentifier (T_IDENTIFIER n _) = Identifier n
 toIdentifier _ = error "not an identifier"
 }

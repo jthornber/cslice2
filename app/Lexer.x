@@ -1,6 +1,7 @@
 {
 module Lexer (
     Alex(..),
+    AlexPosn(..),
     alexError,
     runAlex,
     lexStep
@@ -119,22 +120,22 @@ _Noreturn	{keyword T_NORETURN}
 _Static_assert  {keyword T_STATIC_ASSERT}
 _Thread_local   {keyword T_THREAD_LOCAL}
 
-$alpha [$alpha $digit \_]*	{withS (return . T_IDENTIFIER)}
-[1-9]$digit*@intSuffix		{withS (return . intToken readDec)}
-0[xX]$hexDigit+@intSuffix	{withS (return . intToken readHex . drop 2)}
-0[1-9]*@intSuffix		{withS (return . intToken readOct . drop 1)}
-\"@s_chars\"			{withS (return . T_STRING)}
+$alpha [$alpha $digit \_]*	{withS (\s p -> return $ T_IDENTIFIER s p)}
+[1-9]$digit*@intSuffix		{withS (\s p -> return $ intToken readDec s p)}
+0[xX]$hexDigit+@intSuffix	{withS (\s p -> return $ intToken (readHex . drop 2) s p)}
+0[1-9]*@intSuffix		{withS (\s p -> return $ intToken (readOct . drop 1) s p)}
+\"@s_chars\"			{withS (\s p -> return $ T_STRING s p)}
 
 
 {
-lexStep :: (Token -> Alex a) -> Alex a
+lexStep :: (Token AlexPosn -> Alex a) -> Alex a
 lexStep k = do
     token <- alexMonadScan
     k token
 
-withS fn (_, _, _, s) len = fn (take len s)
+withS fn (p, _, _, s) len = fn (take len s) p
 
-keyword v _ _ = return v
+keyword v (p, _, _, _) _ = return (v p)
 punc = keyword
 
 charPos ::Char -> Char -> Char -> Maybe Integer
@@ -149,8 +150,8 @@ charPosMany ((b, e, offset):rs) c = case charPos b e c of
     Just n -> Just $ n + offset
     Nothing -> charPosMany rs c
 
-intToken :: (String -> Integer) -> String -> Token
-intToken fn s = T_INTEGER (fn ns) suffix
+intToken :: (String -> Integer) -> String -> AlexPosn -> Token AlexPosn
+intToken fn s p = T_INTEGER (fn ns) suffix p
     where
         (suffix', ns') = span suffixChar . reverse $ s
         suffix = reverse suffix'
@@ -175,5 +176,5 @@ readHex = foldl' (\acc n -> acc * 16 + fromChar n) 0
 traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x
 
-alexEOF = return T_EOF
+alexEOF = return $ T_EOF (AlexPn 0 0 0)
 }
