@@ -2,20 +2,25 @@
 module Lexer (
     Alex(..),
     AlexPosn(..),
+    AlexUserState(..),
     alexError,
     runAlex,
-    lexStep
+    lexStep,
+    insertTypedef
     ) where
 
 import Token
 
+import Control.Applicative
 import Debug.Trace
 import Data.Char
 import Data.List
 import Data.Maybe
+import Data.Set (Set)
+import qualified Data.Set as S
 }
 
-%wrapper "monad"
+%wrapper "monadUserState"
 
 $digit = 0-9
 $hexDigit = [0-9a-fA-F]
@@ -131,7 +136,13 @@ $alpha [$alpha $digit \_]*	{withS (\s p -> return $ T_IDENTIFIER s p)}
 lexStep :: (Token AlexPosn -> Alex a) -> Alex a
 lexStep k = do
     token <- alexMonadScan
-    k token
+    case token of
+        (T_IDENTIFIER nm pos) -> do
+            b <- isTypedef (Identifier nm)
+            if b
+                then k $ T_TYPEDEF_NAME nm pos
+                else k $ T_IDENTIFIER nm pos
+        t -> k t
 
 withS fn (p, _, _, s) len = fn (take len s) p
 
@@ -177,4 +188,27 @@ traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x
 
 alexEOF = return $ T_EOF (AlexPn 0 0 0)
+
+data AlexUserState = AlexUserState {
+    typedefs :: Set Identifier
+} deriving (Eq, Show)
+
+getTypedefs :: Alex (Set Identifier)
+getTypedefs = do
+    us <- alexGetUserState
+    return $ typedefs us
+
+modifyTypedefs :: (Set Identifier -> Set Identifier) -> Alex ()
+modifyTypedefs fn = do
+    us <- alexGetUserState
+    alexSetUserState $ AlexUserState (fn $ typedefs us)
+
+insertTypedef :: Identifier -> Alex ()
+insertTypedef nm = modifyTypedefs $ S.insert nm
+
+isTypedef :: Identifier -> Alex Bool
+isTypedef nm = S.member nm <$> getTypedefs
+
+alexInitUserState :: AlexUserState
+alexInitUserState = AlexUserState {typedefs = S.empty}
 }

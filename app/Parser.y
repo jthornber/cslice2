@@ -15,6 +15,7 @@ module Parser (
 
 import AST
 import Control.Monad
+import Debug.Trace
 import Token
 import Lexer
 }
@@ -86,6 +87,7 @@ import Lexer
 identifier_	{T_IDENTIFIER _ _}
 integer_const	{T_INTEGER _ _ _}
 string_const	{T_STRING _ _}
+typedef_name_    {T_TYPEDEF_NAME _ _}
 
 '->'		{T_ARROW _}
 '='		{T_ASSIGN _}
@@ -295,8 +297,18 @@ expression_opt :: {Maybe Exp}
 -- Declarations
 ----------------
 
+-- We use 1 token of look ahead, so have to make sure that maybeAddTypedef is
+-- called before a possible typedef name is read.  So this 'internal' production
+-- is really just 'declaration' without the trailing ';'.
+declaration_internal :: {([DeclarationSpecifier], [InitDeclarator])}
+    : declaration_specifiers init_declarator_list_opt 	{% do
+        let inits = unreverse $2
+        maybeAddTypedef $1 inits
+        return ($1, inits)
+}
+
 declaration :: {Declaration}
-    : declaration_specifiers init_declarator_list_opt ';' 	{Declaration $1 (unreverse $2)}
+    : declaration_internal ';'		{Declaration (fst $1) (snd $1)}
 
 {-
     | static_assert_declaration
@@ -519,7 +531,7 @@ direct_abstract_declarator_opt :: {Maybe DirectAbstractDeclarator}
     | direct_abstract_declarator	{Just $1}
 
 typedef_name :: {Identifier}
-    : identifier	{$1}
+    : typedef_name_ {case $1 of (T_TYPEDEF_NAME s pos) -> Identifier s}
 
 initializer :: {Initializer}
     : assignment_exp			{InitAssign $1}
@@ -649,4 +661,13 @@ unreverse (Reversed xs) = reverse xs
 toIdentifier :: Token AlexPosn -> Identifier
 toIdentifier (T_IDENTIFIER n _) = Identifier n
 toIdentifier _ = error "not an identifier"
+
+-- (Declaration [DSStorageClass Typedef,DSTypeSpecifier Int] [InitDeclarator (Declarator Nothing (DDIdentifier (Identifier "foo"))) N othing])
+maybeAddTypedef :: [DeclarationSpecifier] -> [InitDeclarator] -> Alex ()
+maybeAddTypedef [DSStorageClass Typedef, _]
+                [InitDeclarator (Declarator Nothing (DDIdentifier nm)) Nothing] =
+    insertTypedef nm
+maybeAddTypedef x y = return ()
+
+traceIt x = trace (show x) x
 }

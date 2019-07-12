@@ -1,6 +1,4 @@
 module AST (
-    Identifier(..),
-
     AssignOp(..),
     BinOp(..),
     UnaryOp(..),
@@ -41,10 +39,6 @@ module AST (
 
 import Token
 import Lexer
-
-data Identifier =
-    Identifier String
-    deriving (Eq, Show)
 
 data AssignOp =
     ASSIGN |

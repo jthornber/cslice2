@@ -1,7 +1,12 @@
 module Token (
+    Identifier(..),
     Token (..),
     getAttr
     ) where
+
+data Identifier =
+    Identifier String
+    deriving (Eq, Show, Ord)
 
 data Token a =
     T_AUTO a |
@@ -52,6 +57,7 @@ data Token a =
     T_IDENTIFIER String a |
     T_INTEGER Integer String a |
     T_STRING String a |
+    T_TYPEDEF_NAME String a |
 
     T_ARROW a |
     T_ASSIGN a |
