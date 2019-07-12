@@ -7,6 +7,8 @@ module Parser (
     additive_exp,
     conditional_exp,
 
+    declaration,
+
     statement,
     translation_unit
     ) where
@@ -24,6 +26,9 @@ import Lexer
 %name additive_exp additive_exp
 %name conditional_exp conditional_exp
 %name statement statement
+
+%name declaration declaration
+
 %name translation_unit translation_unit
 
 %lexer {lexStep} {T_EOF _}
@@ -291,18 +296,18 @@ expression_opt :: {Maybe Exp}
 ----------------
 
 declaration :: {Declaration}
-    : declaration_specifiers init_declarator_list ';' {Declaration $1 (unreverse $2)}
+    : declaration_specifiers init_declarator_list_opt ';' 	{Declaration $1 (unreverse $2)}
 
 {-
     | static_assert_declaration
 -}
 
-declaration_specifiers_star :: {Reversed DeclarationSpecifier}
-    : {- empty -}		{rempty}
-    | declaration_specifiers_star declaration_specifier		{rcons $2 $1}
+declaration_specifiers_opt :: {[DeclarationSpecifier]}
+    : {- empty -}			{[]}
+    | declaration_specifiers		{$1}
 
 declaration_specifiers :: {[DeclarationSpecifier]}
-    : declaration_specifier declaration_specifiers_star	{$1 : unreverse $2}
+    : declaration_specifier declaration_specifiers_opt		{$1 : $2}
 
 declaration_specifier :: {DeclarationSpecifier}
     : storage_class_specifier	{DSStorageClass $1}
@@ -312,8 +317,12 @@ declaration_specifier :: {DeclarationSpecifier}
     | alignment_specifier	{DSAlignmentSpecifier $1}
 
 init_declarator_list :: {Reversed InitDeclarator}
-    : {- empty -}		{rempty}
+    : init_declarator				{Reversed [$1]}
     | init_declarator_list ',' init_declarator	{rcons $3 $1}
+
+init_declarator_list_opt :: {Reversed InitDeclarator}
+    : {- empty -}		{rempty}
+    | init_declarator_list	{$1}
 
 init_declarator :: {InitDeclarator}
     : declarator			{InitDeclarator $1 Nothing}
@@ -365,25 +374,25 @@ struct_declaration_list :: {Reversed StructDeclaration}
     | struct_declaration_list struct_declaration	{rcons $2 $1}
 
 struct_declaration :: {StructDeclaration}
-    : specifier_qualifier_list struct_declarator_list_star ';'	{StructDeclaration (unreverse $1) (unreverse $2)}
+    : specifier_qualifier_list struct_declarator_list_opt ';'	{StructDeclaration (unreverse $1) (unreverse $2)}
 
 {-
     | static_assert_declaration
 -}
 
 specifier_qualifier_list :: {Reversed SpecifierQualifier}
-    : type_specifier specifier_qualifier_list_star	{rcons (SQTypeSpecifier $1) $2}
-    | type_qualifier specifier_qualifier_list_star	{rcons (SQTypeQualifier $1) $2}
+    : type_specifier specifier_qualifier_list_opt	{rcons (SQTypeSpecifier $1) $2}
+    | type_qualifier specifier_qualifier_list_opt	{rcons (SQTypeQualifier $1) $2}
 
-specifier_qualifier_list_star :: {Reversed SpecifierQualifier}
-    : {- empty -}	{Reversed []}
+specifier_qualifier_list_opt :: {Reversed SpecifierQualifier}
+    : {- empty -}		{rempty}
     | specifier_qualifier_list	{$1}
 
 struct_declarator_list :: {Reversed StructDeclarator}
     : struct_declarator					{Reversed [$1]}
     | struct_declarator_list ',' struct_declarator 	{rcons $3 $1}
 
-struct_declarator_list_star :: {Reversed StructDeclarator}
+struct_declarator_list_opt :: {Reversed StructDeclarator}
     : {- empty -}		{rempty}
     | struct_declarator_list	{$1}
 
@@ -439,16 +448,16 @@ declarator_opt :: {Maybe Declarator}
 direct_declarator :: {DirectDeclarator}
     : identifier		{DDIdentifier $1}
     | '(' declarator ')'	{DDNested $2}
-    | direct_declarator '[' type_qualifier_list_star assignment_exp_opt ']' 	{DDArray $1 (unreverse $3) $4 False False}
-    | direct_declarator '[' 'static' type_qualifier_list_star assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
+    | direct_declarator '[' type_qualifier_list_opt assignment_exp_opt ']' 	{DDArray $1 (unreverse $3) $4 False False}
+    | direct_declarator '[' 'static' type_qualifier_list_opt assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list 'static' assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
-    | direct_declarator '[' type_qualifier_list_star '*' ']'			{DDArray $1 (unreverse $3) Nothing False True}
+    | direct_declarator '[' type_qualifier_list_opt '*' ']'			{DDArray $1 (unreverse $3) Nothing False True}
     | direct_declarator '(' parameter_type_list ')'				{DDFun $1 $3}
-    | direct_declarator '(' identifier_list_star ')'				{DDFunOdd $1 (unreverse $3)}
+    | direct_declarator '(' identifier_list_opt ')'				{DDFunOdd $1 (unreverse $3)}
 
 pointer :: {Pointer}
-    : '*' type_qualifier_list_star		{Pointer (unreverse $2) Nothing}
-    | '*' type_qualifier_list_star pointer	{Pointer (unreverse $2) (Just $3)}
+    : '*' type_qualifier_list_opt		{Pointer (unreverse $2) Nothing}
+    | '*' type_qualifier_list_opt pointer	{Pointer (unreverse $2) (Just $3)}
 
 pointer_opt ::	{Maybe Pointer}
     : {- empty -}	{Nothing}
@@ -458,8 +467,8 @@ type_qualifier_list :: {Reversed TypeQualifier}
     : type_qualifier				{Reversed [$1]}
     | type_qualifier_list type_qualifier	{rcons $2 $1}
 
-type_qualifier_list_star :: {Reversed TypeQualifier}
-    : {- empty -}		{Reversed []}
+type_qualifier_list_opt :: {Reversed TypeQualifier}
+    : {- empty -}		{rempty}
     | type_qualifier_list	{$1}
 
 parameter_type_list :: {ParameterTypeList}
@@ -482,7 +491,7 @@ identifier_list	:: {Reversed Identifier}
     : identifier			{Reversed [$1]}
     | identifier_list ',' identifier	{rcons $3 $1}
 
-identifier_list_star :: {Reversed Identifier}
+identifier_list_opt :: {Reversed Identifier}
     : {- empty -} 	{rempty}
     | identifier_list 	{$1}
 
@@ -499,8 +508,8 @@ abstract_declarator_opt :: {Maybe AbstractDeclarator}
 
 direct_abstract_declarator :: {DirectAbstractDeclarator}
     : '(' abstract_declarator ')'	{DANested $2}
-    | direct_abstract_declarator_opt '[' type_qualifier_list_star assignment_exp_opt ']'		{DAArray $1 (unreverse $3) $4 False}
-    | direct_abstract_declarator_opt '[' 'static' type_qualifier_list_star assignment_exp ']'		{DAArray $1 (unreverse $4) (Just $5) True}
+    | direct_abstract_declarator_opt '[' type_qualifier_list_opt assignment_exp_opt ']'		{DAArray $1 (unreverse $3) $4 False}
+    | direct_abstract_declarator_opt '[' 'static' type_qualifier_list_opt assignment_exp ']'		{DAArray $1 (unreverse $4) (Just $5) True}
     | direct_abstract_declarator_opt '[' type_qualifier_list 'static' assignment_exp ']'		{DAArray $1 (unreverse $3) (Just $5) False}
     | direct_abstract_declarator_opt '[' '*' ']'							{DAArrayStar $1}
     | direct_abstract_declarator_opt '(' parameter_type_list_opt ')'					{DAFun $1 $3}
@@ -618,9 +627,13 @@ declaration_list :: {Reversed Declaration}
 
 {
 parseError :: Token AlexPosn -> Alex a
-parseError t = alexError $ "Parse error at line " ++ (show line) ++ ":" ++ (show col)
+parseError t = alexError $ show t
+
+{-
+"Parse error at line " ++ (show line) ++ ":" ++ (show col)
     where
         (AlexPn b line col) = getAttr t
+-}
 
 data Reversed a = Reversed [a]
 

@@ -4,7 +4,7 @@ import AST
 import Lexer
 import Parser
 
-parse s = runAlex s translation_unit
+parse s = runAlex s declaration
 
 main :: IO ()
 main = do
