@@ -6,7 +6,8 @@ module Lexer (
     alexError,
     runAlex,
     lexStep,
-    insertTypedef
+    insertTypedef,
+    insertStruct
     ) where
 
 import Token
@@ -22,16 +23,25 @@ import qualified Data.Set as S
 
 %wrapper "monadUserState"
 
-$digit = 0-9
+$digit = [0-9]
 $hexDigit = [0-9a-fA-F]
+$octDigit = [0-7]
 $alpha = [a-zA-Z]
+$eol = \n
+$identletter = [a-zA-Z_\$]
+$instr    = . # [ \\ \" \n \r ]
+$inchar   = . # [ \\ \' \n \r ]
 
+@charesc  = \\([ntvbrfaeE\\\?\'\"]|$octDigit{1,3}|x$hexDigit+)
 @intSuffix = [uU][lL]?|[uU](ll|LL)?|[lL][uU]?|ll[uU]?|LL[uU]?|u?
 @s_chars = [^"]*
+@int = $digit+
 
 tokens :-
 
 $white+			;
+
+\#$white*@int$white*(\"[^\"]+\"$white*)?(@int$white*)*\r?$eol	;
 
 "["		{punc T_OPEN_SQUARE}
 "]"		{punc T_CLOSE_SQUARE}
@@ -80,6 +90,9 @@ $white+			;
 "="		{punc T_ASSIGN}
 ","		{punc T_COMMA}
 
+__attribute__	{keyword T_ATTRIBUTE}
+asm             {keyword T_ASM}
+__asm__         {keyword T_ASM}
 auto		{keyword T_AUTO}
 break		{keyword T_BREAK}
 case		{keyword T_CASE}
@@ -92,11 +105,13 @@ double		{keyword T_DOUBLE}
 else		{keyword T_ELSE}
 enum		{keyword T_ENUM}
 extern		{keyword T_EXTERN}
+__extension__	;
 float		{keyword T_FLOAT}
 for		{keyword T_FOR}
 goto		{keyword T_GOTO}
 if		{keyword T_IF}
 inline		{keyword T_INLINE}
+__inline__      {keyword T_INLINE}
 int		{keyword T_INT}
 long		{keyword T_LONG}
 register	{keyword T_REGISTER}
@@ -104,15 +119,19 @@ restrict	{keyword T_RESTRICT}
 return		{keyword T_RETURN}
 short		{keyword T_SHORT}
 signed		{keyword T_SIGNED}
+__signed__	{keyword T_SIGNED}
 sizeof		{keyword T_SIZEOF}
 static		{keyword T_STATIC}
 struct		{keyword T_STRUCT}
 switch		{keyword T_SWITCH}
+typeof          {keyword T_TYPEOF}
+__typeof__      {keyword T_TYPEOF}
 typedef		{keyword T_TYPEDEF}
 union		{keyword T_UNION}
 unsigned	{keyword T_UNSIGNED}
 void		{keyword T_VOID}
 volatile	{keyword T_VOLATILE}
+__volatile__    {keyword T_VOLATILE}
 while		{keyword T_WHILE}
 _Alignas	{keyword T_ALIGNAS}
 _Alignof	{keyword T_ALIGNOF}
@@ -125,12 +144,12 @@ _Noreturn	{keyword T_NORETURN}
 _Static_assert  {keyword T_STATIC_ASSERT}
 _Thread_local   {keyword T_THREAD_LOCAL}
 
-$alpha [$alpha $digit \_]*	{withS (\s p -> return $ T_IDENTIFIER s p)}
-[1-9]$digit*@intSuffix		{withS (\s p -> return $ intToken readDec s p)}
-0[xX]$hexDigit+@intSuffix	{withS (\s p -> return $ intToken (readHex . drop 2) s p)}
-0[1-9]*@intSuffix		{withS (\s p -> return $ intToken (readOct . drop 1) s p)}
-\"@s_chars\"			{withS (\s p -> return $ T_STRING s p)}
-
+$identletter($identletter|$digit)*	{withS (\s p -> return $ T_IDENTIFIER s p)}
+[1-9]$digit*@intSuffix			{withS (\s p -> return $ intToken readDec s p)}
+0[xX]$hexDigit+@intSuffix		{withS (\s p -> return $ intToken (readHex . drop 2) s p)}
+0[1-9]*@intSuffix			{withS (\s p -> return $ intToken (readOct . drop 1) s p)}
+\"($instr|@charesc)*\"			{withS (\s p -> return $ T_STRING s p)}
+\'($inchar|@charesc)\'			{withS (\s p -> return $ T_CHAR_LIT s p)}
 
 {
 lexStep :: (Token AlexPosn -> Alex a) -> Alex a
@@ -190,7 +209,8 @@ traceIt x = trace (show x) x
 alexEOF = return $ T_EOF (AlexPn 0 0 0)
 
 data AlexUserState = AlexUserState {
-    typedefs :: Set Identifier
+    typedefs :: Set Identifier,
+    structs :: Set Identifier
 } deriving (Eq, Show)
 
 getTypedefs :: Alex (Set Identifier)
@@ -201,14 +221,40 @@ getTypedefs = do
 modifyTypedefs :: (Set Identifier -> Set Identifier) -> Alex ()
 modifyTypedefs fn = do
     us <- alexGetUserState
-    alexSetUserState $ AlexUserState (fn $ typedefs us)
+    alexSetUserState $ us { typedefs = fn $ typedefs us }
 
 insertTypedef :: Identifier -> Alex ()
-insertTypedef nm = modifyTypedefs $ S.insert nm
+insertTypedef = modifyTypedefs . S.insert
 
 isTypedef :: Identifier -> Alex Bool
 isTypedef nm = S.member nm <$> getTypedefs
 
+getStructs :: Alex (Set Identifier)
+getStructs = do
+    us <- alexGetUserState
+    return $ structs us
+
+modifyStructs :: (Set Identifier -> Set Identifier) -> Alex ()
+modifyStructs fn = do
+    us <- alexGetUserState
+    alexSetUserState $ us { structs = fn $ structs us }
+
+isStruct :: Identifier -> Alex Bool
+isStruct nm = S.member nm <$> getStructs
+
+insertStruct :: Identifier -> Alex ()
+insertStruct = modifyStructs . S.insert . traceIt
+
+builtinTypedefs :: Set Identifier
+builtinTypedefs = S.fromList . map Identifier $ types
+    where
+        types = [ "__builtin_va_list"
+                , "_Bool"
+                ]
+
 alexInitUserState :: AlexUserState
-alexInitUserState = AlexUserState {typedefs = S.empty}
+alexInitUserState = AlexUserState {
+        typedefs = builtinTypedefs,
+        structs = S.empty
+    }
 }

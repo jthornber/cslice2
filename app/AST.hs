@@ -4,6 +4,10 @@ module AST (
     UnaryOp(..),
     Type(..),
     Exp(..),
+    Attr(..),
+    Asm(..),
+    AsmQualifier(..),
+    AsmOperand(..),
 
     Declaration(..),
     InitDeclarator(..),
@@ -88,10 +92,15 @@ data UnaryOp =
     POST_DEC
     deriving (Eq, Show)
 
+data Attr = Attr
+    deriving (Eq, Show)
+
+-- FIXME: remove tokens
 data Exp =
     VarExp Identifier |
     ConstExp (Token AlexPosn) |
     StringConstExp (Token AlexPosn) |
+    CharConstExp String |
     SubscriptExp Exp Exp |
     FuncallExp Exp [Exp] |
     StructElt Exp Identifier |
@@ -104,7 +113,8 @@ data Exp =
     CastExp TypeName Exp |
     SizeofValueExp Exp |
     SizeofTypeExp TypeName |
-    AlignofExp Exp
+    AlignofExp Exp |
+    BlockExp [BlockItem]      -- GNU extension
     deriving (Eq, Show)
 
 data Declaration =
@@ -134,7 +144,8 @@ data DeclarationSpecifier =
     DSTypeSpecifier TypeSpecifier |
     DSTypeQualifier TypeQualifier |
     DSFunctionSpecifier FunctionSpecifier |
-    DSAlignmentSpecifier AlignmentSpecifier
+    DSAlignmentSpecifier AlignmentSpecifier |
+    DSAttr [Attr]
     deriving (Eq, Show)
 
 data StorageClass =
@@ -214,7 +225,7 @@ data DirectDeclarator =
     DDNested Declarator |
     DDArray DirectDeclarator [TypeQualifier] (Maybe Exp) Bool Bool |   -- bools are 'static', '*'
     DDFun DirectDeclarator ParameterTypeList |
-    DDFunOdd DirectDeclarator [Identifier]
+    DDFunPtr DirectDeclarator [Identifier]
     deriving (Eq, Show)
 
 data Pointer =
@@ -242,6 +253,19 @@ data DirectAbstractDeclarator =
     DAFun (Maybe DirectAbstractDeclarator) (Maybe ParameterTypeList)
     deriving (Eq, Show)
 
+data Asm = Asm
+    deriving (Eq, Show)
+
+data AsmQualifier =
+    AsmInline |
+    AsmVolatile |
+    AsmGoto
+    deriving (Eq, Show)
+
+data AsmOperand =
+    AsmOperand [String] Exp
+    deriving (Eq, Show)
+
 data TypeName =
     TypeName [SpecifierQualifier] (Maybe AbstractDeclarator)
     deriving (Eq, Show)
@@ -252,7 +276,7 @@ data Type = Type
 
 data Statement =
     LabelStatement Identifier Statement |
-    CaseStatement Exp Statement |
+    CaseStatement Exp (Maybe Exp) Statement |
     DefaultStatement Statement |
     CompoundStatement [BlockItem] |
     ExpressionStatement Exp |
@@ -265,7 +289,8 @@ data Statement =
     ContinueStatement |
     BreakStatement |
     ReturnStatement (Maybe Exp) |
-    EmptyStatement
+    EmptyStatement |
+    AsmStatement
     deriving (Eq, Show)
 
 data BlockItem =
@@ -279,5 +304,6 @@ data TranslationUnit =
 
 data ExternalDeclaration =
     ExternalDeclaration Declaration |
-    FunDef [DeclarationSpecifier] Declarator [Declaration] Statement
+    FunDef [DeclarationSpecifier] Declarator [Declaration] Statement |
+    AsmDeclaration Asm
     deriving (Eq, Show)

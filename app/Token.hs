@@ -9,6 +9,8 @@ data Identifier =
     deriving (Eq, Show, Ord)
 
 data Token a =
+    T_ASM a |
+    T_ATTRIBUTE a |
     T_AUTO a |
     T_BREAK a |
     T_CASE a |
@@ -37,6 +39,7 @@ data Token a =
     T_STATIC a |
     T_STRUCT a |
     T_SWITCH a |
+    T_TYPEOF a |
     T_TYPEDEF a |
     T_UNION a |
     T_UNSIGNED a |
@@ -56,6 +59,7 @@ data Token a =
 
     T_IDENTIFIER String a |
     T_INTEGER Integer String a |
+    T_CHAR_LIT String a |
     T_STRING String a |
     T_TYPEDEF_NAME String a |
 

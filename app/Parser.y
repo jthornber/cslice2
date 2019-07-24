@@ -39,6 +39,8 @@ import Lexer
 
 %token
 
+'asm'           {T_ASM _}
+'__attribute__'	{T_ATTRIBUTE _}
 'auto'		{T_AUTO _}
 'break'		{T_BREAK _}
 'case'		{T_CASE _}
@@ -87,6 +89,7 @@ import Lexer
 identifier_	{T_IDENTIFIER _ _}
 integer_const	{T_INTEGER _ _ _}
 string_const	{T_STRING _ _}
+char_const	{T_CHAR_LIT _ _}
 typedef_name_    {T_TYPEDEF_NAME _ _}
 
 '->'		{T_ARROW _}
@@ -144,13 +147,14 @@ identifier :: {Identifier}
     : identifier_	{toIdentifier $1}
 
 const_exp :: {Exp}
-    : integer_const	{ConstExp $1}
+    : conditional_exp {$1}
 
 primary_exp :: {Exp}
     : identifier		{VarExp $1}
     | integer_const		{ConstExp $1}
     | string_const		{StringConstExp $1}
-    | '(' expression ')'		{$2}
+    | char_const		{CharConstExp $ unwrapChar $1}
+    | '(' expression ')'	{$2}
 
 {-
     | generic_selection		{$1}
@@ -194,6 +198,11 @@ unary_exp :: {Exp}
     | unary_operator cast_exp {UnaryExp $1 $2}
     | 'sizeof' unary_exp 	{SizeofValueExp $2}
     | 'sizeof' '(' type_name ')' {SizeofTypeExp $3}
+    | '(' compound_statement ')' {
+        case $2 of
+            (CompoundStatement items) -> BlockExp items
+            _ -> error "not a block"  -- FIXME: parseError
+        }
 
   {-
     | 'alignof' '(' type_name ')' {AlignofExp $3}
@@ -305,7 +314,7 @@ declaration_internal :: {([DeclarationSpecifier], [InitDeclarator])}
         let inits = unreverse $2
         maybeAddTypedef $1 inits
         return ($1, inits)
-}
+    }
 
 declaration :: {Declaration}
     : declaration_internal ';'		{Declaration (fst $1) (snd $1)}
@@ -327,6 +336,7 @@ declaration_specifier :: {DeclarationSpecifier}
     | type_qualifier		{DSTypeQualifier $1}
     | function_specifier	{DSFunctionSpecifier $1}
     | alignment_specifier	{DSAlignmentSpecifier $1}
+    | attr			{DSAttr $1}
 
 init_declarator_list :: {Reversed InitDeclarator}
     : init_declarator				{Reversed [$1]}
@@ -339,6 +349,10 @@ init_declarator_list_opt :: {Reversed InitDeclarator}
 init_declarator :: {InitDeclarator}
     : declarator			{InitDeclarator $1 Nothing}
     | declarator '=' initializer	{InitDeclarator $1 (Just $3)}
+    | declarator asm_declarator		{InitDeclarator $1 Nothing}
+
+asm_declarator :: {String}
+    : 'asm' '(' string_const ')'	{unwrapString $3}
 
 storage_class_specifier :: {StorageClass}
     : 'typedef'		{Typedef}
@@ -368,10 +382,13 @@ type_specifier :: {TypeSpecifier}
     | atomic_type_specifier		{$1}
    -}
 
-
 struct_or_union_specifier :: {TypeSpecifier}
-    : struct_or_union identifier_opt '{' struct_declaration_list '}' 	{StructOrUnionSpecifier $1 $2 (Just $ unreverse $4)}
-    | struct_or_union identifier					{StructOrUnionSpecifier $1 (Just $2) Nothing}
+    : struct_or_union identifier '{' struct_declaration_list '}' attr_opt 	{% do
+        insertStruct $2
+        return $ StructOrUnionSpecifier $1 (Just $2) (Just $ unreverse $4)
+    }
+    | struct_or_union '{' struct_declaration_list '}' attr_opt 			{StructOrUnionSpecifier $1 Nothing (Just $ unreverse $3)}
+    | struct_or_union identifier						{StructOrUnionSpecifier $1 (Just $2) Nothing}
 
 identifier_opt :: {Maybe Identifier}
     : {- empty -} 	{Nothing}
@@ -465,7 +482,7 @@ direct_declarator :: {DirectDeclarator}
     | direct_declarator '[' type_qualifier_list 'static' assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list_opt '*' ']'			{DDArray $1 (unreverse $3) Nothing False True}
     | direct_declarator '(' parameter_type_list ')'				{DDFun $1 $3}
-    | direct_declarator '(' identifier_list_opt ')'				{DDFunOdd $1 (unreverse $3)}
+    | direct_declarator '(' identifier_list_opt ')'				{DDFunPtr $1 (unreverse $3)}
 
 pointer :: {Pointer}
     : '*' type_qualifier_list_opt		{Pointer (unreverse $2) Nothing}
@@ -521,10 +538,10 @@ abstract_declarator_opt :: {Maybe AbstractDeclarator}
 direct_abstract_declarator :: {DirectAbstractDeclarator}
     : '(' abstract_declarator ')'	{DANested $2}
     | direct_abstract_declarator_opt '[' type_qualifier_list_opt assignment_exp_opt ']'		{DAArray $1 (unreverse $3) $4 False}
-    | direct_abstract_declarator_opt '[' 'static' type_qualifier_list_opt assignment_exp ']'		{DAArray $1 (unreverse $4) (Just $5) True}
-    | direct_abstract_declarator_opt '[' type_qualifier_list 'static' assignment_exp ']'		{DAArray $1 (unreverse $3) (Just $5) False}
-    | direct_abstract_declarator_opt '[' '*' ']'							{DAArrayStar $1}
-    | direct_abstract_declarator_opt '(' parameter_type_list_opt ')'					{DAFun $1 $3}
+    | direct_abstract_declarator_opt '[' 'static' type_qualifier_list_opt assignment_exp ']'	{DAArray $1 (unreverse $4) (Just $5) True}
+    | direct_abstract_declarator_opt '[' type_qualifier_list 'static' assignment_exp ']'	{DAArray $1 (unreverse $3) (Just $5) False}
+    | direct_abstract_declarator_opt '[' '*' ']'						{DAArrayStar $1}
+    | direct_abstract_declarator_opt '(' parameter_type_list_opt ')'				{DAFun $1 $3}
 
 direct_abstract_declarator_opt :: {Maybe DirectAbstractDeclarator}
     : {- empty -}			{Nothing}
@@ -562,6 +579,31 @@ static_assert_declaration
     : 'static_assert' '(' const_exp ',' string_const ')' ';'
    -}
 
+-- Attr grammar cribbed from c-language lib
+attr :: { [Attr] }
+    : '__attribute__' '(' '(' attribute_list ')' ')'      { unreverse $4 }
+
+attr_opt :: { Maybe [Attr] }
+    : {- empty -}		{Nothing}
+    | attr			{Just $1}
+
+attribute_list :: {Reversed Attr}
+    : attribute                      { Reversed [$1] }
+    | attribute_list ',' attribute   { rcons $3 $1 }
+
+attribute :: {Attr}
+    : {- empty -}				{Attr}
+    | identifier                		{Attr}
+    | 'const'                     		{Attr}
+    | identifier '(' attribute_params ')' 	{Attr}
+    | identifier '(' ')'        		{Attr} 
+
+attribute_params :: {Reversed [Exp]}
+    : const_exp							{rempty}
+    | unary_exp assignment_op unary_exp				{rempty}
+    | attribute_params ',' const_exp				{rempty}
+    | attribute_params ',' unary_exp assignment_op unary_exp 	{rempty}
+
 --------------
 -- Statements
 --------------
@@ -573,11 +615,13 @@ statement :: {Statement}
     | selection_statement	{$1}
     | iteration_statement	{$1}
     | jump_statement		{$1}
+    | asm ';'			{AsmStatement}
 
 labelled_statement :: {Statement}
-    : identifier ':' statement		{LabelStatement $1 $3}
-    | 'case' const_exp ':' statement	{CaseStatement $2 $4}
-    | 'default' ':' statement		{DefaultStatement $3}
+    : identifier ':' statement				{LabelStatement $1 $3}
+    | 'case' const_exp ':' statement			{CaseStatement $2 Nothing $4}
+    | 'case' const_exp '...' const_exp ':' statement	{CaseStatement $2 (Just $4) $6}
+    | 'default' ':' statement				{DefaultStatement $3}
 
 compound_statement :: {Statement}
     : '{' block_item_list_opt '}'	{CompoundStatement $ unreverse $2}
@@ -615,6 +659,74 @@ jump_statement :: {Statement}
     | 'break' ';'			{BreakStatement}
     | 'return' expression_opt ';'	{ReturnStatement $2}
 
+asm_basic :: {Asm}
+    : 'asm' asm_basic_qualifiers '(' asm_instructions ')'	{Asm}
+
+asm :: {Asm}
+    : 'asm' asm_qualifiers '(' string_consts ':' asm_operands ')' {
+        Asm
+    }
+    | 'asm' asm_qualifiers '(' string_consts ':' asm_operands_opt ':' asm_operands ')' {
+        Asm
+    }
+    | 'asm' asm_qualifiers '(' string_consts ':' asm_operands_opt ':' asm_operands_opt ':' asm_clobbers ')' {
+        Asm
+    }
+
+{-
+    | 'asm' asm_qualifiers '(' string_consts ':' ':' asm_operands_opt ':' asm_clobbers_opt ':' asm_gotos ')' {
+        Asm
+    }
+-}
+
+string_consts :: {Reversed String}
+    : string_const			{Reversed [unwrapString $1]}
+    | string_consts string_const 	{rcons (unwrapString $2) $1}
+
+asm_operand :: {AsmOperand}
+    : string_consts '(' expression ')'	{AsmOperand (unreverse $1) $3}
+    | '[' identifier ']' string_consts '(' expression ')'	{AsmOperand (unreverse $4) $6}
+
+asm_operands :: {Reversed AsmOperand}
+    : asm_operand			{Reversed [$1]}
+    | asm_operands ',' asm_operand	{rcons $3 $1}
+
+asm_operands_opt :: {Reversed AsmOperand}
+    : {- empty -}		{rempty}
+    | asm_operands		{$1}
+
+asm_clobbers :: {Reversed String}
+    : string_const			{Reversed [unwrapString $1]}
+    | asm_clobbers ',' string_const	{rcons (unwrapString $3) $1}
+
+asm_clobbers_opt :: {Reversed String}
+    : {- empty -}		{rempty}
+    | asm_clobbers		{$1}
+
+asm_gotos :: {Reversed String}
+    : string_const			{Reversed [unwrapString $1]}
+    | asm_gotos ',' string_const	{rcons (unwrapString $3) $1}
+
+asm_basic_qualifiers :: {Reversed AsmQualifier}
+    : {- empty -}					{rempty}
+    | asm_basic_qualifiers asm_basic_qualifier		{rcons $2 $1}
+
+asm_basic_qualifier :: {AsmQualifier}
+    : 'inline'		{AsmInline}
+    | 'volatile'	{AsmVolatile}
+
+asm_qualifiers :: {Reversed AsmQualifier}
+    : {- empty -}			{rempty}
+    | asm_qualifiers asm_qualifier	{rcons $2 $1}
+
+asm_qualifier :: {AsmQualifier}
+    : 'inline'		{AsmInline}
+    | 'volatile'	{AsmVolatile}
+    | 'goto'		{AsmGoto}
+
+asm_instructions :: {Token AlexPosn}
+    : string_const	{$1}
+
 ------------------------
 -- External definitions
 ------------------------
@@ -629,6 +741,7 @@ external_declarations :: {Reversed ExternalDeclaration}
 external_declaration :: {ExternalDeclaration}
     : function_definition	{$1}
     | declaration		{ExternalDeclaration $1}
+    | asm_basic ';'			{AsmDeclaration $1}
 
 function_definition :: {ExternalDeclaration}
     : declaration_specifiers declarator declaration_list compound_statement	{FunDef $1 $2 (unreverse $3) $4}
@@ -664,10 +777,24 @@ toIdentifier _ = error "not an identifier"
 
 -- (Declaration [DSStorageClass Typedef,DSTypeSpecifier Int] [InitDeclarator (Declarator Nothing (DDIdentifier (Identifier "foo"))) N othing])
 maybeAddTypedef :: [DeclarationSpecifier] -> [InitDeclarator] -> Alex ()
-maybeAddTypedef [DSStorageClass Typedef, _]
-                [InitDeclarator (Declarator Nothing (DDIdentifier nm)) Nothing] =
-    insertTypedef nm
+maybeAddTypedef ((DSStorageClass Typedef):_) [InitDeclarator (Declarator _ dd) Nothing] =
+    insertTypedef $ extractTypedefName dd
 maybeAddTypedef x y = return ()
+
+extractTypedefName :: DirectDeclarator -> Identifier
+extractTypedefName (DDIdentifier nm) = nm
+extractTypedefName (DDNested (Declarator _ dd)) = extractTypedefName dd
+extractTypedefName (DDArray dd _ _ _ _) = extractTypedefName dd
+extractTypedefName (DDFun dd _) = extractTypedefName dd
+extractTypedefName (DDFunPtr dd _) = extractTypedefName dd
+
+unwrapString :: Token AlexPosn -> String
+unwrapString (T_STRING s _) = s
+unwrapString _ = error "not a string"
+
+unwrapChar :: Token AlexPosn -> String
+unwrapChar (T_CHAR_LIT s _) = s
+unwrapChar _ = error "not a char"
 
 traceIt x = trace (show x) x
 }
