@@ -158,6 +158,11 @@ string_const :: {String}
 identifier :: {Identifier}
     : identifier_	{toIdentifier $1}
 
+-- There are situations where a typedef name can be used as a variable name
+identifier_or_typedef :: {Identifier}
+    : identifier			{$1}
+    | typedef_name			{$1}
+
 const_exp :: {Exp}
     : conditional_exp {$1}
 
@@ -175,6 +180,7 @@ field_assignments_opt :: {Reversed (Identifier, Exp)}
 field_specifier :: {Reversed Identifier}
     : identifier			{rsingleton $1}
     | field_specifier '.' identifier	{rcons $3 $1}
+    | field_specifier '[' const_exp ']' {$1}   -- FIXME: finish
 
 primary_exp :: {Exp}
     : identifier		{VarExp $1}
@@ -524,8 +530,8 @@ declarator_opt :: {Maybe Declarator}
     | declarator	{Just $1}
 
 direct_declarator :: {DirectDeclarator}
-    : identifier		{DDIdentifier $1}
-    | '(' declarator ')'	{DDNested $2}
+    : identifier_or_typedef		{DDIdentifier $1}
+    | '(' declarator ')'		{DDNested $2}
     | direct_declarator '[' type_qualifier_list_opt assignment_exp_opt ']' 	{DDArray $1 (unreverse $3) $4 False False}
     | direct_declarator '[' 'static' type_qualifier_list_opt assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list 'static' assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
