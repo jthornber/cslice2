@@ -59,6 +59,8 @@ import Lexer
 'if'		{T_IF _}
 'inline'	{T_INLINE _}
 'int'		{T_INT _}
+'__int128'	{T_INT128 _}
+'__label__'	{T_LABEL _}
 'long'		{T_LONG _}
 'register'	{T_REGISTER _}
 'restrict'	{T_RESTRICT _}
@@ -85,10 +87,16 @@ import Lexer
 'noreturn'	{T_NORETURN _}
 'static_assert'	{T_STATIC_ASSERT _}
 'thread_local'	{T_THREAD_LOCAL _}
+'typeof'	{T_TYPEOF _}
+
+'__builtin_va_arg'		{T_BUILTIN_VA_ARG _}
+'__builtin_offsetof'		{T_BUILTIN_OFFSETOF _}
+'__builtin_types_compatible_p'	{T_BUILTIN_TYPES_COMPATIBLE_P _}
+'__builtin_convert_vector'	{T_BUILTIN_CONVERT_VECTOR _}
 
 identifier_	{T_IDENTIFIER _ _}
 integer_const	{T_INTEGER _ _ _}
-string_const	{T_STRING _ _}
+string_const_	{T_STRING _ _}
 char_const	{T_CHAR_LIT _ _}
 typedef_name_    {T_TYPEDEF_NAME _ _}
 
@@ -143,11 +151,30 @@ typedef_name_    {T_TYPEDEF_NAME _ _}
 
 %%
 
+string_const :: {String}
+    : string_const_			{unwrapString $1}
+    | string_const string_const_	{$1 ++ (unwrapString $2)}
+
 identifier :: {Identifier}
     : identifier_	{toIdentifier $1}
 
 const_exp :: {Exp}
     : conditional_exp {$1}
+
+field_assignment :: {(Identifier, Exp)}
+    : '.' identifier '=' expression	{($2, $4)}
+
+field_assignments :: {Reversed (Identifier, Exp)}
+    : field_assignment				{rsingleton $1}
+    | field_assignments ',' field_assignment	{rcons $3 $1}
+
+field_assignments_opt :: {Reversed (Identifier, Exp)}
+    : {- empty -}		{rempty}
+    | field_assignments		{$1}
+
+field_specifier :: {Reversed Identifier}
+    : identifier			{rsingleton $1}
+    | field_specifier '.' identifier	{rcons $3 $1}
 
 primary_exp :: {Exp}
     : identifier		{VarExp $1}
@@ -155,6 +182,20 @@ primary_exp :: {Exp}
     | string_const		{StringConstExp $1}
     | char_const		{CharConstExp $ unwrapChar $1}
     | '(' expression ')'	{$2}
+
+    | '__builtin_va_arg' '(' assignment_exp ',' type_name ')' {
+        BuiltinVaArg
+    }
+    | '__builtin_offsetof' '(' type_name ',' field_specifier ')' {
+        BuiltinOffsetOf
+    }
+    | '__builtin_types_compatible_p' '(' type_name ',' type_name ')' {
+        BuiltinTypesCompatible 
+    }
+
+    | '__builtin_convert_vector' '(' assignment_exp ',' type_name ')' {
+        BuiltinConvertVector
+    }
 
 {-
     | generic_selection		{$1}
@@ -171,7 +212,6 @@ generic_association
     | default ':' assignment_exp			{}
 -}
 
-
 postfix_exp :: {Exp}
     : primary_exp		{$1}
     | postfix_exp '[' expression ']'	{SubscriptExp $1 $3}
@@ -180,11 +220,13 @@ postfix_exp :: {Exp}
     | postfix_exp '->' identifier 	{StructDeref $1 $3}
     | postfix_exp '++'			{UnaryExp POST_INC $1}
     | postfix_exp '--'			{UnaryExp POST_DEC $1}
-
-{-
-    | '(' type_name ')' '{' initializer_list '}'	{}
-    | '(' type_name ')' '{' initializer_list ',' '}'	{}
--}
+    | '(' type_name ')' '{' initializer_list_opt '}'	{CompoundLiteral $2 $ unreverse $5}
+    | '(' type_name ')' '{' initializer_list ',' '}'	{CompoundLiteral $2 $ unreverse $5}
+    | '(' compound_statement ')' 	{
+        case $2 of
+            (CompoundStatement labels items) -> BlockExp labels items
+            _ -> error "not a block"  -- FIXME: parseError
+        }
 
 argument_exp_list :: {Reversed Exp}
     : {- empty -}	{Reversed []}
@@ -192,29 +234,22 @@ argument_exp_list :: {Reversed Exp}
     | argument_exp_list ',' assignment_exp {rcons $3 $1}
 
 unary_exp :: {Exp}
-    : postfix_exp	{$1}
-    | '++' unary_exp    {UnaryExp PRE_INC $2}
-    | '--' unary_exp    {UnaryExp PRE_INC $2}
-    | unary_operator cast_exp {UnaryExp $1 $2}
-    | 'sizeof' unary_exp 	{SizeofValueExp $2}
-    | 'sizeof' '(' type_name ')' {SizeofTypeExp $3}
-    | '(' compound_statement ')' {
-        case $2 of
-            (CompoundStatement items) -> BlockExp items
-            _ -> error "not a block"  -- FIXME: parseError
-        }
-
-  {-
-    | 'alignof' '(' type_name ')' {AlignofExp $3}
-   -}
+    : postfix_exp			{$1}
+    | '++' unary_exp    		{UnaryExp PRE_INC $2}
+    | '--' unary_exp    		{UnaryExp PRE_INC $2}
+    | unary_operator cast_exp 		{UnaryExp $1 $2}
+    | 'sizeof' unary_exp 		{SizeofValueExp $2}
+    | 'sizeof' '(' type_name ')' 	{SizeofTypeExp $3}
+    | 'alignof' '(' type_name ')' 	{AlignofExp $3}
 
 unary_operator :: {UnaryOp}
-    : '&' {ADDRESS_OF}
-    | '*' {DEREF}
-    | '+' {UNARY_PLUS}
-    | '-' {UNARY_MINUS}
-    | '~' {BIT_NOT}
-    | '!' {LOGICAL_NOT}
+    : '&&'	{LABEL_ADDRESS}
+    | '&' 	{ADDRESS_OF}
+    | '*' 	{DEREF}
+    | '+' 	{UNARY_PLUS}
+    | '-' 	{UNARY_MINUS}
+    | '~' 	{BIT_NOT}
+    | '!' 	{LOGICAL_NOT}
 
 -- FIXME: casts aren't parsing
 cast_exp :: {Exp}
@@ -302,6 +337,14 @@ expression_opt :: {Maybe Exp}
     : {- empty -} 	{Nothing}
     | expression	{Just $1}
 
+exps :: {Reversed Exp}
+    : expression			{rsingleton $1}
+    | exps ',' expression		{rcons $3 $1}
+
+exps_opt :: {Reversed Exp}
+    : {- empty -}	{rempty}
+    | exps		{$1} 
+
 ----------------
 -- Declarations
 ----------------
@@ -310,7 +353,7 @@ expression_opt :: {Maybe Exp}
 -- called before a possible typedef name is read.  So this 'internal' production
 -- is really just 'declaration' without the trailing ';'.
 declaration_internal :: {([DeclarationSpecifier], [InitDeclarator])}
-    : declaration_specifiers init_declarator_list_opt 	{% do
+    : declaration_specifiers init_declarator_list_opt {% do
         let inits = unreverse $2
         maybeAddTypedef $1 inits
         return ($1, inits)
@@ -318,10 +361,7 @@ declaration_internal :: {([DeclarationSpecifier], [InitDeclarator])}
 
 declaration :: {Declaration}
     : declaration_internal ';'		{Declaration (fst $1) (snd $1)}
-
-{-
-    | static_assert_declaration
--}
+    | static_assert_declaration		{$1}
 
 declaration_specifiers_opt :: {[DeclarationSpecifier]}
     : {- empty -}			{[]}
@@ -338,6 +378,7 @@ declaration_specifier :: {DeclarationSpecifier}
     | alignment_specifier	{DSAlignmentSpecifier $1}
     | attr			{DSAttr $1}
 
+
 init_declarator_list :: {Reversed InitDeclarator}
     : init_declarator				{Reversed [$1]}
     | init_declarator_list ',' init_declarator	{rcons $3 $1}
@@ -347,12 +388,12 @@ init_declarator_list_opt :: {Reversed InitDeclarator}
     | init_declarator_list	{$1}
 
 init_declarator :: {InitDeclarator}
-    : declarator			{InitDeclarator $1 Nothing}
+    : declarator 			{InitDeclarator $1 Nothing}
     | declarator '=' initializer	{InitDeclarator $1 (Just $3)}
     | declarator asm_declarator		{InitDeclarator $1 Nothing}
 
 asm_declarator :: {String}
-    : 'asm' '(' string_const ')'	{unwrapString $3}
+    : 'asm' '(' string_const ')'	{$3}
 
 storage_class_specifier :: {StorageClass}
     : 'typedef'		{Typedef}
@@ -367,6 +408,7 @@ type_specifier :: {TypeSpecifier}
     | 'char'		{Char}
     | 'short'		{Short}
     | 'int'		{Int}
+    | '__int128'	{Int128}
     | 'long'		{Long}
     | 'float'		{Float}
     | 'double'		{Double}
@@ -377,17 +419,19 @@ type_specifier :: {TypeSpecifier}
     | struct_or_union_specifier		{$1}
     | enum_specifier			{$1}
     | typedef_name			{TSTypedefName $1}
+    | 'typeof' '(' expression ')'	{TSTypeofExp $3}
+    | 'typeof' '(' declaration_specifiers abstract_declarator_opt ')'	{TSTypeofDecl $3} -- FIXME: need direct abstract declarator?
 
   {-
     | atomic_type_specifier		{$1}
    -}
 
 struct_or_union_specifier :: {TypeSpecifier}
-    : struct_or_union identifier '{' struct_declaration_list '}' attr_opt 	{% do
+    : struct_or_union identifier '{' struct_declaration_list_opt '}' attrs_opt 	{% do
         insertStruct $2
         return $ StructOrUnionSpecifier $1 (Just $2) (Just $ unreverse $4)
     }
-    | struct_or_union '{' struct_declaration_list '}' attr_opt 			{StructOrUnionSpecifier $1 Nothing (Just $ unreverse $3)}
+    | struct_or_union '{' struct_declaration_list_opt '}' attrs_opt 			{StructOrUnionSpecifier $1 Nothing (Just $ unreverse $3)}
     | struct_or_union identifier						{StructOrUnionSpecifier $1 (Just $2) Nothing}
 
 identifier_opt :: {Maybe Identifier}
@@ -402,20 +446,25 @@ struct_declaration_list :: {Reversed StructDeclaration}
     : struct_declaration				{Reversed [$1]}
     | struct_declaration_list struct_declaration	{rcons $2 $1}
 
+struct_declaration_list_opt :: {Reversed StructDeclaration}
+    : {- empty -} 		{rempty}
+    | struct_declaration_list	{$1}
+
 struct_declaration :: {StructDeclaration}
     : specifier_qualifier_list struct_declarator_list_opt ';'	{StructDeclaration (unreverse $1) (unreverse $2)}
-
-{-
-    | static_assert_declaration
--}
+    | static_assert_declaration					{StructStaticAssert}
 
 specifier_qualifier_list :: {Reversed SpecifierQualifier}
-    : type_specifier specifier_qualifier_list_opt	{rcons (SQTypeSpecifier $1) $2}
-    | type_qualifier specifier_qualifier_list_opt	{rcons (SQTypeQualifier $1) $2}
+    : specifier_qualifier				{rsingleton $1}
+    | specifier_qualifier_list specifier_qualifier	{rcons $2 $1}
 
 specifier_qualifier_list_opt :: {Reversed SpecifierQualifier}
     : {- empty -}		{rempty}
     | specifier_qualifier_list	{$1}
+
+specifier_qualifier :: {SpecifierQualifier}
+    : type_specifier attrs_opt		{SQTypeSpecifier $1}
+    | type_qualifier attrs_opt		{SQTypeQualifier $1}
 
 struct_declarator_list :: {Reversed StructDeclarator}
     : struct_declarator					{Reversed [$1]}
@@ -468,7 +517,7 @@ alignment_specifier :: {AlignmentSpecifier}
     | 'alignas' '(' const_exp ')'		{AlignAsConst $3}
 
 declarator :: {Declarator}
-    : pointer_opt direct_declarator	 {Declarator $1 $2}
+    : pointer_opt direct_declarator attrs_opt	 {Declarator $1 $2}
 
 declarator_opt :: {Maybe Declarator}
     : {- empty -}	{Nothing}
@@ -481,12 +530,12 @@ direct_declarator :: {DirectDeclarator}
     | direct_declarator '[' 'static' type_qualifier_list_opt assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list 'static' assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list_opt '*' ']'			{DDArray $1 (unreverse $3) Nothing False True}
-    | direct_declarator '(' parameter_type_list ')'				{DDFun $1 $3}
-    | direct_declarator '(' identifier_list_opt ')'				{DDFunPtr $1 (unreverse $3)}
+    | direct_declarator '(' parameter_type_list ')' attrs_opt			{DDFun $1 $3}
+    | direct_declarator '(' identifier_list_opt ')' attrs_opt			{DDFunPtr $1 (unreverse $3)}
 
 pointer :: {Pointer}
-    : '*' type_qualifier_list_opt		{Pointer (unreverse $2) Nothing}
-    | '*' type_qualifier_list_opt pointer	{Pointer (unreverse $2) (Just $3)}
+    : '*' type_qualifier_list_opt attrs_opt		{Pointer (unreverse $2) Nothing}
+    | '*' type_qualifier_list_opt pointer attrs_opt	{Pointer (unreverse $2) (Just $3)}
 
 pointer_opt ::	{Maybe Pointer}
     : {- empty -}	{Nothing}
@@ -552,12 +601,16 @@ typedef_name :: {Identifier}
 
 initializer :: {Initializer}
     : assignment_exp			{InitAssign $1}
-    | '{' initializer_list '}'		{InitList (unreverse $2)}
+    | '{' initializer_list_opt '}'	{InitList (unreverse $2)}
     | '{' initializer_list ',' '}'	{InitList (unreverse $2)}
 
 initializer_list :: {Reversed InitializerPair}
     : designation_opt initializer				{Reversed [InitializerPair $1 $2]}
     | initializer_list ',' designation_opt initializer		{rcons (InitializerPair $3 $4) $1}
+
+initializer_list_opt :: {Reversed InitializerPair}
+    : {- empty -}		{rempty}
+    | initializer_list		{$1}
 
 designation :: {[Designator]}
     : designator_list '='	{unreverse $1}
@@ -574,10 +627,10 @@ designator :: {Designator}
     : '[' const_exp ']'			{SubscriptDesignator $2}
     | '.' identifier			{StructDesignator $2}
 
-  {-
-static_assert_declaration
-    : 'static_assert' '(' const_exp ',' string_const ')' ';'
-   -}
+static_assert_declaration :: {Declaration}
+    : 'static_assert' '(' const_exp ',' string_const ')' ';'		{
+        StaticAssert
+    }
 
 -- Attr grammar cribbed from c-language lib
 attr :: { [Attr] }
@@ -586,6 +639,14 @@ attr :: { [Attr] }
 attr_opt :: { Maybe [Attr] }
     : {- empty -}		{Nothing}
     | attr			{Just $1}
+
+attrs :: { Reversed [Attr] }
+    : attr		{Reversed [$1]}
+    | attrs attr	{rcons $2 $1}
+
+attrs_opt :: { Reversed [Attr] }
+    : {- empty -}	{Reversed [[]]}
+    | attrs		{$1}
 
 attribute_list :: {Reversed Attr}
     : attribute                      { Reversed [$1] }
@@ -623,8 +684,16 @@ labelled_statement :: {Statement}
     | 'case' const_exp '...' const_exp ':' statement	{CaseStatement $2 (Just $4) $6}
     | 'default' ':' statement				{DefaultStatement $3}
 
+label_declaration :: {[Identifier]}
+    : '__label__' identifier_list ';'		{unreverse $2}
+
+label_declarations :: {[Identifier]}
+    : label_declaration				{$1}
+    | label_declarations label_declaration	{$1 ++ $2}
+
 compound_statement :: {Statement}
-    : '{' block_item_list_opt '}'	{CompoundStatement $ unreverse $2}
+    : '{' block_item_list_opt '}'			{CompoundStatement [] $ unreverse $2}
+    | '{' label_declarations block_item_list_opt '}'	{CompoundStatement $2 (unreverse $3)}
 
 block_item_list :: {Reversed BlockItem}
     : block_item			{rcons $1 rempty}
@@ -663,29 +732,25 @@ asm_basic :: {Asm}
     : 'asm' asm_basic_qualifiers '(' asm_instructions ')'	{Asm}
 
 asm :: {Asm}
-    : 'asm' asm_qualifiers '(' string_consts ':' asm_operands ')' {
+    : 'asm' asm_qualifiers '(' string_const ')' {
         Asm
     }
-    | 'asm' asm_qualifiers '(' string_consts ':' asm_operands_opt ':' asm_operands ')' {
+    | 'asm' asm_qualifiers '(' string_const ':' asm_operands ')' {
         Asm
     }
-    | 'asm' asm_qualifiers '(' string_consts ':' asm_operands_opt ':' asm_operands_opt ':' asm_clobbers ')' {
+    | 'asm' asm_qualifiers '(' string_const ':' asm_operands_opt ':' asm_operands ')' {
         Asm
     }
-
-{-
-    | 'asm' asm_qualifiers '(' string_consts ':' ':' asm_operands_opt ':' asm_clobbers_opt ':' asm_gotos ')' {
+    | 'asm' asm_qualifiers '(' string_const ':' asm_operands_opt ':' asm_operands_opt ':' asm_clobbers ')' {
         Asm
     }
--}
-
-string_consts :: {Reversed String}
-    : string_const			{Reversed [unwrapString $1]}
-    | string_consts string_const 	{rcons (unwrapString $2) $1}
+    | 'asm' asm_qualifiers '(' string_const ':' asm_operands_opt ':' asm_operands_opt ':' asm_clobbers_opt ':' asm_gotos ')' {
+        Asm
+    }
 
 asm_operand :: {AsmOperand}
-    : string_consts '(' expression ')'	{AsmOperand (unreverse $1) $3}
-    | '[' identifier ']' string_consts '(' expression ')'	{AsmOperand (unreverse $4) $6}
+    : string_const '(' expression ')'	{AsmOperand $1 $3}
+    | '[' identifier ']' string_const '(' expression ')'	{AsmOperand $4 $6}
 
 asm_operands :: {Reversed AsmOperand}
     : asm_operand			{Reversed [$1]}
@@ -696,16 +761,16 @@ asm_operands_opt :: {Reversed AsmOperand}
     | asm_operands		{$1}
 
 asm_clobbers :: {Reversed String}
-    : string_const			{Reversed [unwrapString $1]}
-    | asm_clobbers ',' string_const	{rcons (unwrapString $3) $1}
+    : string_const			{Reversed [$1]}
+    | asm_clobbers ',' string_const	{rcons $3 $1}
 
 asm_clobbers_opt :: {Reversed String}
     : {- empty -}		{rempty}
     | asm_clobbers		{$1}
 
-asm_gotos :: {Reversed String}
-    : string_const			{Reversed [unwrapString $1]}
-    | asm_gotos ',' string_const	{rcons (unwrapString $3) $1}
+asm_gotos :: {Reversed Identifier}
+    : identifier			{Reversed [$1]}
+    | asm_gotos ',' identifier 		{rcons $3 $1}
 
 asm_basic_qualifiers :: {Reversed AsmQualifier}
     : {- empty -}					{rempty}
@@ -724,7 +789,7 @@ asm_qualifier :: {AsmQualifier}
     | 'volatile'	{AsmVolatile}
     | 'goto'		{AsmGoto}
 
-asm_instructions :: {Token AlexPosn}
+asm_instructions :: {String}
     : string_const	{$1}
 
 ------------------------
@@ -732,16 +797,17 @@ asm_instructions :: {Token AlexPosn}
 ------------------------
 
 translation_unit :: {TranslationUnit}
-    : external_declarations			{TranslationUnit $ unreverse $1}
+    : external_declarations			{TranslationUnit $1}
 
-external_declarations :: {Reversed ExternalDeclaration}
-    : {- empty -}					{rempty}
-    | external_declarations external_declaration	{rcons $2 $1}
+external_declarations :: {[ExternalDeclaration]}
+    : {- empty -}					{[]}
+    | external_declarations external_declaration	{$1 ++ $2}
 
-external_declaration :: {ExternalDeclaration}
-    : function_definition	{$1}
-    | declaration		{ExternalDeclaration $1}
-    | asm_basic ';'			{AsmDeclaration $1}
+external_declaration :: {[ExternalDeclaration]}
+    : function_definition	{[$1]}
+    | declaration		{[ExternalDeclaration $1]}
+    | asm_basic ';'		{[AsmDeclaration $1]}
+    | ';'			{[]}
 
 function_definition :: {ExternalDeclaration}
     : declaration_specifiers declarator declaration_list compound_statement	{FunDef $1 $2 (unreverse $3) $4}
@@ -764,6 +830,9 @@ data Reversed a = Reversed [a]
 
 rempty :: Reversed a
 rempty = Reversed []
+
+rsingleton :: a -> Reversed a
+rsingleton x = Reversed [x]
 
 rcons :: a -> Reversed a -> Reversed a
 rcons x (Reversed xs) = Reversed (x:xs)

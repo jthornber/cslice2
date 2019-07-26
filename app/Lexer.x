@@ -113,6 +113,8 @@ if		{keyword T_IF}
 inline		{keyword T_INLINE}
 __inline__      {keyword T_INLINE}
 int		{keyword T_INT}
+__int128	{keyword T_INT128}
+__label__	{keyword T_LABEL}
 long		{keyword T_LONG}
 register	{keyword T_REGISTER}
 restrict	{keyword T_RESTRICT}
@@ -133,8 +135,10 @@ void		{keyword T_VOID}
 volatile	{keyword T_VOLATILE}
 __volatile__    {keyword T_VOLATILE}
 while		{keyword T_WHILE}
+__alignas__	{keyword T_ALIGNAS}
 _Alignas	{keyword T_ALIGNAS}
 _Alignof	{keyword T_ALIGNOF}
+__alignof__	{keyword T_ALIGNOF}
 _Atomic		{keyword T_ATOMIC}
 _Bool		{keyword T_BOOL}
 _Complex	{keyword T_COMPLEX}
@@ -144,10 +148,16 @@ _Noreturn	{keyword T_NORETURN}
 _Static_assert  {keyword T_STATIC_ASSERT}
 _Thread_local   {keyword T_THREAD_LOCAL}
 
+__builtin_va_arg		{keyword T_BUILTIN_VA_ARG}
+__builtin_offsetof		{keyword T_BUILTIN_OFFSETOF}
+__builtin_types_compatible_p	{keyword T_BUILTIN_TYPES_COMPATIBLE_P}
+__builtin_convert_vector	{keyword T_BUILTIN_CONVERT_VECTOR}
+
 $identletter($identletter|$digit)*	{withS (\s p -> return $ T_IDENTIFIER s p)}
+
 [1-9]$digit*@intSuffix			{withS (\s p -> return $ intToken readDec s p)}
 0[xX]$hexDigit+@intSuffix		{withS (\s p -> return $ intToken (readHex . drop 2) s p)}
-0[1-9]*@intSuffix			{withS (\s p -> return $ intToken (readOct . drop 1) s p)}
+0$octDigit*@intSuffix			{withS (\s p -> return $ intToken (readOct . drop 1) s p)}
 \"($instr|@charesc)*\"			{withS (\s p -> return $ T_STRING s p)}
 \'($inchar|@charesc)\'			{withS (\s p -> return $ T_CHAR_LIT s p)}
 

@@ -81,6 +81,7 @@ data BinOp =
 
 data UnaryOp =
     ADDRESS_OF |
+    LABEL_ADDRESS |
     DEREF |
     UNARY_PLUS |
     UNARY_MINUS |
@@ -99,8 +100,9 @@ data Attr = Attr
 data Exp =
     VarExp Identifier |
     ConstExp (Token AlexPosn) |
-    StringConstExp (Token AlexPosn) |
+    StringConstExp String |
     CharConstExp String |
+    CompoundLiteral TypeName [InitializerPair] |
     SubscriptExp Exp Exp |
     FuncallExp Exp [Exp] |
     StructElt Exp Identifier |
@@ -113,12 +115,17 @@ data Exp =
     CastExp TypeName Exp |
     SizeofValueExp Exp |
     SizeofTypeExp TypeName |
-    AlignofExp Exp |
-    BlockExp [BlockItem]      -- GNU extension
+    AlignofExp TypeName |
+    BlockExp [Identifier] [BlockItem] |     -- GNU extension
+    BuiltinVaArg |
+    BuiltinOffsetOf |
+    BuiltinTypesCompatible |
+    BuiltinConvertVector
     deriving (Eq, Show)
 
 data Declaration =
-    Declaration [DeclarationSpecifier] [InitDeclarator]
+    Declaration [DeclarationSpecifier] [InitDeclarator] |
+    StaticAssert
     deriving (Eq, Show)
 
 data InitDeclarator =
@@ -162,6 +169,7 @@ data TypeSpecifier =
     Char |
     Short |
     Int |
+    Int128 |
     Long |
     Float |
     Double |
@@ -173,7 +181,9 @@ data TypeSpecifier =
     StructOrUnionSpecifier StructType (Maybe Identifier) (Maybe [StructDeclaration]) |
     EnumDefSpecifier (Maybe Identifier) [Enumerator] |
     EnumRefSpecifier Identifier |
-    TSTypedefName Identifier
+    TSTypedefName Identifier |
+    TSTypeofExp Exp |
+    TSTypeofDecl [DeclarationSpecifier]
     deriving (Eq, Show)
 
 data SpecifierQualifier =
@@ -187,7 +197,8 @@ data StructType =
     deriving (Eq, Show)
 
 data StructDeclaration =
-    StructDeclaration [SpecifierQualifier] [StructDeclarator]
+    StructDeclaration [SpecifierQualifier] [StructDeclarator] |
+    StructStaticAssert
     deriving (Eq, Show)
 
 data StructDeclarator =
@@ -263,7 +274,7 @@ data AsmQualifier =
     deriving (Eq, Show)
 
 data AsmOperand =
-    AsmOperand [String] Exp
+    AsmOperand String Exp
     deriving (Eq, Show)
 
 data TypeName =
@@ -278,7 +289,7 @@ data Statement =
     LabelStatement Identifier Statement |
     CaseStatement Exp (Maybe Exp) Statement |
     DefaultStatement Statement |
-    CompoundStatement [BlockItem] |
+    CompoundStatement [Identifier] [BlockItem] |
     ExpressionStatement Exp |
     IfStatement Exp Statement (Maybe Statement) |
     SwitchStatement Exp Statement |

@@ -29,6 +29,8 @@ data Token a =
     T_IF a |
     T_INLINE a |
     T_INT a |
+    T_INT128 a |
+    T_LABEL a |
     T_LONG a |
     T_REGISTER a |
     T_RESTRICT a |
@@ -112,7 +114,11 @@ data Token a =
     T_STAR a |
     T_STAR_ASSIGN a |
     T_TILDE a |
-    T_EOF a
+    T_EOF a |
+    T_BUILTIN_VA_ARG a |
+    T_BUILTIN_OFFSETOF a |
+    T_BUILTIN_TYPES_COMPATIBLE_P a |
+    T_BUILTIN_CONVERT_VECTOR a
     deriving (Eq, Show)
 
 getAttr :: Token a -> a
