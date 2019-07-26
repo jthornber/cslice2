@@ -4,9 +4,7 @@ module Token (
     getAttr
     ) where
 
-data Identifier =
-    Identifier String
-    deriving (Eq, Show, Ord)
+import Identifier
 
 data Token a =
     T_ASM a |

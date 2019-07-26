@@ -2,7 +2,6 @@ module AST (
     AssignOp(..),
     BinOp(..),
     UnaryOp(..),
-    Type(..),
     Exp(..),
     Attr(..),
     Asm(..),
@@ -41,8 +40,7 @@ module AST (
     ExternalDeclaration(..)
     ) where
 
-import Token
-import Lexer
+import Identifier
 
 data AssignOp =
     ASSIGN |
@@ -96,10 +94,9 @@ data UnaryOp =
 data Attr = Attr
     deriving (Eq, Show)
 
--- FIXME: remove tokens
 data Exp =
     VarExp Identifier |
-    ConstExp (Token AlexPosn) |
+    IntConstExp Integer |
     StringConstExp String |
     CharConstExp String |
     CompoundLiteral TypeName [InitializerPair] |
@@ -279,10 +276,6 @@ data AsmOperand =
 
 data TypeName =
     TypeName [SpecifierQualifier] (Maybe AbstractDeclarator)
-    deriving (Eq, Show)
-
--- FIXME: Do we need this?
-data Type = Type
     deriving (Eq, Show)
 
 data Statement =
