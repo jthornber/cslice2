@@ -2,8 +2,12 @@ module HIR (
     IntType(..),
     EnumEntry(..),
     StructEntry(..),
+    StructType(..),
     ParamEntry(..),
     RawType(..),
+    FunType(..),
+    Sign(..),
+    CVR(..),
     Type(..),
     BinOp(..),
     UnaryOp(..),
@@ -20,10 +24,14 @@ module HIR (
 
 import Identifier
 
+import Data.Set (Set)
+import qualified Data.Set as S
+
 data IntType =
     CHAR |
     SHORT |
     INT |
+    INT128 |
     LONG |
     LONG_LONG
     deriving (Eq, Show)
@@ -34,11 +42,17 @@ data EnumEntry = EnumEntry Identifier Integer
 data StructEntry = StructEntry Type (Maybe Identifier) (Maybe Integer)
     deriving (Eq, Show)
 
-data ParamEntry = ParamEntry Type (Maybe Identifier)
+data ParamEntry =
+    ParamEntry Type (Maybe Identifier)
     deriving (Eq, Show)
 
--- vararg, inline, noreturn
-data FunType = FunType Type (Maybe Identifier) [ParamEntry] Bool Bool Bool
+data FunFlags =
+    INLINE |
+    NORETURN |
+    VARARG
+    deriving (Eq, Ord, Show)
+
+data FunType = FunType Type [ParamEntry] (Set FunFlags)
     deriving (Eq, Show)
 
 data StructType =
@@ -46,20 +60,26 @@ data StructType =
     Union
     deriving (Eq, Show)
 
+data Sign =
+    SIGNED |
+    UNSIGNED
+    deriving (Eq, Show)
+
 data RawType =
-            -- Basic types
+    -- Basic types
     TyVoid |
-    TyInt Bool IntType |
+    TyBool |
+    TyInt Sign IntType |  -- Signed
     TyFloat |
     TyDouble |
     TyLongDouble |
 
     -- Enumerations
-    TyEnumeration (Maybe Identifier) [EnumEntry] |
+    TyEnumeration (Maybe Identifier) (Maybe [EnumEntry]) |
 
     -- Derived types
     TyArray Type (Maybe Integer) |
-    TyStruct StructType [StructEntry] |
+    TyStruct StructType (Maybe Identifier) (Maybe [StructEntry]) |
     TyPointer Type |
 
     TyFunction FunType |
@@ -69,7 +89,13 @@ data RawType =
 
     deriving (Eq, Show)
 
-data Type = Type RawType Bool Bool Bool   -- const, volatile, restrict
+data CVR =
+    CONST |
+    VOLATILE |
+    RESTRICT
+    deriving (Eq, Ord, Show)
+
+data Type = Type RawType (Set CVR)
     deriving (Eq, Show)
 
 data BinOp =
@@ -131,9 +157,16 @@ data Exp =
     deriving (Eq, Show)
 
 data Declaration =
-    Declaration Type StorageClass Identifier (Maybe Literal)
+    Declaration Type (Maybe StorageClass) Identifier (Maybe Literal) |
+    FunDeclaration Type StorageClass Identifier (Set FunctionSpecifier)
     deriving (Eq, Show)
 
+data FunctionSpecifier =
+    Inline |
+    Noreturn
+    deriving (Eq, Ord, Show)
+
+-- FIXME: how does this differ from LiteralExp?
 data Literal = Literal Type Value
     deriving (Eq, Show)
 

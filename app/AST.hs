@@ -164,14 +164,19 @@ data StorageClass =
 data TypeSpecifier =
     Void |
     Char |
+    UnsignedChar |
     Short |
+    UnsignedShort |
     Int |
+    UnsignedInt |
     Int128 |
+    UnsignedInt128 |
     Long |
+    UnsignedLong |
+    LongLong |
+    UnsignedLongLong |
     Float |
     Double |
-    Signed |
-    Unsigned |
     Bool |
     Complex |
     AtomicSpecifier |

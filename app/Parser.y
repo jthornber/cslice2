@@ -410,18 +410,25 @@ storage_class_specifier :: {StorageClass}
     | 'register'	{Register}
 
 type_specifier :: {TypeSpecifier}
-    : 'void'		{Void}
-    | 'char'		{Char}
-    | 'short'		{Short}
-    | 'int'		{Int}
-    | '__int128'	{Int128}
-    | 'long'		{Long}
-    | 'float'		{Float}
-    | 'double'		{Double}
-    | 'signed'		{Signed}
-    | 'unsigned'	{Unsigned}
-    | 'bool'		{Bool}
-    | 'complex'		{Complex}
+    : 'void'			{Void}
+    | 'char'			{Char}
+    | 'unsigned' 'char' 	{UnsignedChar}
+    | 'short'			{Short}
+    | 'unsigned' 'short'	{UnsignedShort}
+    | 'int'			{Int}
+    | 'unsigned' 'int'		{UnsignedInt}
+    | 'long' 'long'		{LongLong}
+    | 'unsigned' 'long' 'long'	{UnsignedLongLong}
+    | 'long'			{Long}
+    | 'unsigned' 'long'		{UnsignedLong}
+    | '__int128'		{Int128}
+    | 'unsigned' '__int128'	{UnsignedInt128}
+    | 'unsigned'		{UnsignedInt}
+    | 'signed'			{Int}
+    | 'float'			{Float}
+    | 'double'			{Double}
+    | 'bool'			{Bool}
+    | 'complex'			{Complex}
     | struct_or_union_specifier		{$1}
     | enum_specifier			{$1}
     | typedef_name			{TSTypedefName $1}
