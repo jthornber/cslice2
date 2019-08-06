@@ -1,0 +1,12 @@
+- We need line numbers from the original source to give context for
+  error messages.  Simplest way is to just add a position field to all of
+  the AST and HIR data types.
+
+- HIR pretty printer.
+
+- Thorough unit tests for parse -> HIR -> print cycle
+
+- Harness for preprocessing kernel source
+
+- Put a symbol table into the Translate monad so we can keep track of
+  scopes
