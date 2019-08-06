@@ -12,9 +12,7 @@ module Lexer (
 
 import Token
 
-import Control.Applicative
 import Debug.Trace
-import Data.Char
 import Data.List
 import Data.Maybe
 import Data.Set (Set)
@@ -164,8 +162,8 @@ $identletter($identletter|$digit)*	{withS (\s p -> return $ T_IDENTIFIER s p)}
 {
 lexStep :: (Token AlexPosn -> Alex a) -> Alex a
 lexStep k = do
-    token <- alexMonadScan
-    case token of
+    tok <- alexMonadScan
+    case tok of
         (T_IDENTIFIER nm pos) -> do
             b <- isTypedef (Identifier nm)
             if b
@@ -185,7 +183,7 @@ charPos b e c =
         else Nothing
 
 charPosMany :: [(Char, Char, Integer)] -> Char -> Maybe Integer
-charPosMany [] c = Nothing 
+charPosMany [] _ = Nothing 
 charPosMany ((b, e, offset):rs) c = case charPos b e c of
     Just n -> Just $ n + offset
     Nothing -> charPosMany rs c

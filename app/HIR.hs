@@ -25,7 +25,6 @@ module HIR (
 import Identifier
 
 import Data.Set (Set)
-import qualified Data.Set as S
 
 data IntType =
     CHAR |
@@ -84,7 +83,7 @@ data RawType =
 
     TyFunction FunType |
 
-    -- Typedefs
+    -- Typedefs.  This is a reference to a previously defined typedef
     TyAlias Identifier Type
 
     deriving (Eq, Show)
@@ -158,7 +157,8 @@ data Exp =
 
 data Declaration =
     Declaration Type (Maybe StorageClass) Identifier (Maybe Literal) |
-    FunDeclaration Type StorageClass Identifier (Set FunctionSpecifier)
+    FunDeclaration Type StorageClass Identifier (Set FunctionSpecifier) |
+    TypedefDeclaration Type Identifier
     deriving (Eq, Show)
 
 data FunctionSpecifier =

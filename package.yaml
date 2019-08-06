@@ -49,7 +49,10 @@ executables:
   cslice:
     main:                Main.hs
     source-dirs:         app
+    extensions:
+    - overloadedstrings
     ghc-options:
+    - -Wall
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
@@ -60,7 +63,10 @@ tests:
   cslice2-test:
     main:                Spec.hs
     source-dirs:         test
+    extensions:
+    - overloadedstrings
     ghc-options:
+    - -Wall
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N

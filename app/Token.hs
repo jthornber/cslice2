@@ -217,3 +217,15 @@ getAttr (T_STAR x) = x
 getAttr (T_STAR_ASSIGN x) = x
 getAttr (T_TILDE x) = x
 getAttr (T_EOF x) = x
+getAttr (T_ASM x) = x
+getAttr (T_ATTRIBUTE x) = x
+getAttr (T_INT128 x) = x
+getAttr (T_LABEL x) = x
+getAttr (T_TYPEOF x) = x
+getAttr (T_CHAR_LIT _ x) = x
+getAttr (T_TYPEDEF_NAME _ x) = x
+getAttr (T_BUILTIN_VA_ARG x) = x
+getAttr (T_BUILTIN_OFFSETOF x) = x
+getAttr (T_BUILTIN_TYPES_COMPATIBLE_P x) = x
+getAttr (T_BUILTIN_CONVERT_VECTOR x) = x
+
