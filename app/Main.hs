@@ -8,6 +8,9 @@ import Parser
 import Data.Set (Set)
 import qualified Data.Set as S
 
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Util
+
 ---------------------------------------------------------------------
 -- Expression translation
 
@@ -433,7 +436,9 @@ main = do
     let ast = parse input
     case ast of
         Left e -> error e
-        Right ast' -> print . xTranslationUnit $ ast'
+        Right ast' -> case xTranslationUnit ast' of
+            Left e -> error e
+            Right hir -> putDocW 80 (pretty hir)
     where
         parse s = runAlex s translation_unit
 
