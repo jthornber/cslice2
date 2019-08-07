@@ -1,5 +1,5 @@
 {
-module Lexer (
+module C.Lexer (
     Alex(..),
     AlexPosn(..),
     AlexUserState(..),
@@ -10,7 +10,7 @@ module Lexer (
     insertStruct
     ) where
 
-import Token
+import C.Token
 
 import Debug.Trace
 import Data.List

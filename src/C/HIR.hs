@@ -1,4 +1,4 @@
-module HIR (
+module C.HIR (
     IntType(..),
     EnumEntry(..),
     StructEntry(..),
@@ -23,7 +23,7 @@ module HIR (
     ExternalDeclaration(..)
     ) where
 
-import Identifier
+import C.Identifier
 
 import Data.Set (Set)
 import qualified Data.Set as S
@@ -261,11 +261,11 @@ instance Pretty BinOp where
     pretty BIT_OR = pretty "|"
     pretty BIT_AND = pretty "&"
     pretty XOR = pretty "^"
-    pretty HIR.EQ = pretty "=="
+    pretty C.HIR.EQ = pretty "=="
     pretty NEQ = pretty "!="
-    pretty HIR.LT = pretty "<"
+    pretty C.HIR.LT = pretty "<"
     pretty LTE = pretty "<="
-    pretty HIR.GT = pretty ">"
+    pretty C.HIR.GT = pretty ">"
     pretty GTE = pretty ">="
     pretty LSHIFT = pretty "<<"
     pretty RSHIFT = pretty ">>"

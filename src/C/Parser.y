@@ -1,5 +1,5 @@
 {
-module Parser (
+module C.Parser (
     expression,
     postfix_exp,
     unary_exp,
@@ -13,11 +13,13 @@ module Parser (
     translation_unit
     ) where
 
-import AST
+import C.AST
+import C.Token
+import C.Lexer
+
 import Control.Monad
 import Debug.Trace
-import Token
-import Lexer
+
 }
 
 %name expression expression
@@ -280,14 +282,14 @@ shift_exp :: {Exp}
 
 relational_exp :: {Exp}
     : shift_exp {$1}
-    | relational_exp '<' shift_exp {BinaryExp AST.LT $1 $3}
-    | relational_exp '>' shift_exp {BinaryExp AST.GT $1 $3}
+    | relational_exp '<' shift_exp {BinaryExp C.AST.LT $1 $3}
+    | relational_exp '>' shift_exp {BinaryExp C.AST.GT $1 $3}
     | relational_exp '<=' shift_exp {BinaryExp LTE $1 $3}
     | relational_exp '>=' shift_exp {BinaryExp GTE $1 $3}
 
 equality_exp :: {Exp}
     : relational_exp {$1}
-    | equality_exp '==' relational_exp {BinaryExp AST.EQ $1 $3}
+    | equality_exp '==' relational_exp {BinaryExp C.AST.EQ $1 $3}
     | equality_exp '!=' relational_exp {BinaryExp NEQ $1 $3}
 
 and_exp :: {Exp}

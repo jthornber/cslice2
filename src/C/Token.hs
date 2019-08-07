@@ -1,10 +1,10 @@
-module Token (
+module C.Token (
     Identifier(..),
     Token (..),
     getAttr
     ) where
 
-import Identifier
+import C.Identifier
 
 data Token a =
     T_ASM a |

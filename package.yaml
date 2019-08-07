@@ -9,8 +9,8 @@ copyright:           "2019 RedHat UK Ltd"
 extra-source-files:
 - README.md
 - ChangeLog.md
-- app/Lexer.x
-- app/Parser.y
+- src/C/Lexer.x
+- src/C/Parser.y
 
 build-tools:
 - alex

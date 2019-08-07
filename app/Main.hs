@@ -1,9 +1,9 @@
 module Main where
 
-import qualified AST as AST
-import HIR
-import Lexer
-import Parser
+import qualified C.AST as AST
+import C.HIR
+import C.Lexer
+import C.Parser
 
 import Data.Set (Set)
 import qualified Data.Set as S
@@ -20,11 +20,11 @@ xBinOp AST.LOGICAL_AND = pure LOGICAL_AND
 xBinOp AST.BIT_OR = pure BIT_OR
 xBinOp AST.BIT_AND = pure BIT_AND
 xBinOp AST.XOR = pure XOR
-xBinOp AST.EQ = pure HIR.EQ
+xBinOp AST.EQ = pure C.HIR.EQ
 xBinOp AST.NEQ = pure NEQ
-xBinOp AST.LT = pure HIR.LT
+xBinOp AST.LT = pure C.HIR.LT
 xBinOp AST.LTE = pure LTE
-xBinOp AST.GT = pure HIR.GT
+xBinOp AST.GT = pure C.HIR.GT
 xBinOp AST.GTE = pure GTE
 xBinOp AST.LSHIFT = pure LSHIFT
 xBinOp AST.RSHIFT = pure RSHIFT

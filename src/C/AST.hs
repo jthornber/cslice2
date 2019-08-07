@@ -1,4 +1,4 @@
-module AST (
+module C.AST (
     AssignOp(..),
     BinOp(..),
     UnaryOp(..),
@@ -40,7 +40,7 @@ module AST (
     ExternalDeclaration(..)
     ) where
 
-import Identifier
+import C.Identifier
 
 data AssignOp =
     ASSIGN |
