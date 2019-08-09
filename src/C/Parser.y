@@ -414,16 +414,22 @@ storage_class_specifier :: {StorageClass}
 type_specifier :: {TypeSpecifier}
     : 'void'			{Void}
     | 'char'			{Char}
+    | 'signed' 'char'		{Char}
     | 'unsigned' 'char' 	{UnsignedChar}
     | 'short'			{Short}
+    | 'signed' 'short'		{Short}
     | 'unsigned' 'short'	{UnsignedShort}
     | 'int'			{Int}
+    | 'signed' 'int'		{Int}
     | 'unsigned' 'int'		{UnsignedInt}
     | 'long' 'long'		{LongLong}
+    | 'signed' 'long' 'long'	{LongLong}
     | 'unsigned' 'long' 'long'	{UnsignedLongLong}
     | 'long'			{Long}
+    | 'signed' 'long'		{Long}
     | 'unsigned' 'long'		{UnsignedLong}
     | '__int128'		{Int128}
+    | 'signed' '__int128'	{Int128}
     | 'unsigned' '__int128'	{UnsignedInt128}
     | 'unsigned'		{UnsignedInt}
     | 'signed'			{Int}

@@ -29,19 +29,22 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text.Prettyprint.Doc
 
+-- Includes trailing space if non-empty result
 printCVR :: Set CVR -> Doc ann
-printCVR = hsep . map pretty . S.toList
+printCVR cvr = case S.toList cvr of
+    [] -> emptyDoc
+    xs -> (hsep . map pretty $ xs) <> space
 
 printType :: Type -> Maybe Identifier -> Doc ann
-printType (Type rt cvr) Nothing = printCVR cvr <+> printAbstractType rt
-printType (Type rt cvr) (Just nm) = printCVR cvr <+> printConcreteType rt nm
+printType (Type rt cvr) Nothing = printCVR cvr <> printAbstractType rt
+printType (Type rt cvr) (Just nm) = printCVR cvr <> printConcreteType rt nm
 
 printAbstractType :: RawType -> Doc ann
 printAbstractType TyVoid = pretty "void"
 printAbstractType TyBool = pretty "bool"
 
 printAbstractType (TyInt sign ty) =
-    pretty sign <+> pretty ty
+    pretty sign <> pretty ty
 
 printAbstractType TyFloat = pretty "float"
 printAbstractType TyDouble = pretty "double"
@@ -51,9 +54,9 @@ printAbstractType TyLongDouble = pretty "long double"
 printAbstractType (TyEnumeration mnm menum) = undefined
 
 printAbstractType (TyArray ty Nothing) =
-    printType ty Nothing <+> lbracket <> rbracket
+    printType ty Nothing <> lbracket <> rbracket
 
-printAbstractType (TyArray ty (Just size)) = hsep [
+printAbstractType (TyArray ty (Just size)) = hcat [
     printType ty Nothing,
     lbracket,
     pretty size,
@@ -78,7 +81,7 @@ printConcreteType TyVoid nm = pretty "void" <+> pretty nm
 printConcreteType TyBool nm = pretty "bool" <+> pretty nm
 
 printConcreteType (TyInt sign ty) nm =
-    pretty sign <+> pretty ty <+> pretty nm
+    pretty sign <> pretty ty <+> pretty nm
 
 printConcreteType TyFloat nm = pretty "float" <+> pretty nm
 printConcreteType TyDouble nm = pretty "double" <+> pretty nm
@@ -90,7 +93,7 @@ printConcreteType (TyEnumeration mnm menum) _ = undefined
 printConcreteType (TyArray ty Nothing) nm =
     printType ty (Just nm) <+> lbracket <> rbracket
 
-printConcreteType (TyArray ty (Just size)) nm = hsep [
+printConcreteType (TyArray ty (Just size)) nm = hcat [
     printType ty (Just nm),
     lbracket,
     pretty size,
@@ -194,7 +197,7 @@ data Sign =
 
 instance Pretty Sign where
     pretty SIGNED = emptyDoc -- signed is always optional
-    pretty UNSIGNED = pretty "unsigned"
+    pretty UNSIGNED = pretty "unsigned "
 
 data RawType =
     -- Basic types
@@ -404,8 +407,8 @@ data Declaration =
     deriving (Eq, Show)
 
 instance Pretty Declaration where
-    pretty (Declaration t msc nm mlit) = hsep [
-        maybe (emptyDoc) pretty msc,
+    pretty (Declaration t msc nm mlit) = hcat [
+        maybe (emptyDoc) ((<> space) . pretty) msc,
         printType t (Just nm),
         maybe (emptyDoc) pretty mlit]
 

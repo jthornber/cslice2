@@ -72,3 +72,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - cslice2
+    - hspec
+    - QuickCheck
