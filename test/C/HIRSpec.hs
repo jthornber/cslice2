@@ -66,6 +66,22 @@ spec = parallel $ do
         it "can declare float" $ idempotent "float x;"
         it "can declare double" $ idempotent "double x;"
 
+    describe "Declaration.Struct" $ do
+        it "can declare a struct var" $
+            idempotent "struct foo x;"
+
+        it "can declare an empty struct" $
+            idempotent "struct {} x;"
+
+        it "can declare an empty named struct" $
+            idempotent "struct foo {} x;"
+
+        it "can declare an anonymous struct with fields" $
+            idempotent "struct {\n        int x;\n        int y;\n} foo;"
+
+        it "can declare a named struct with fields" $
+            idempotent "struct foo {\n        int x;\n} bar;"
+
     describe "Declaration.StorageClass" $ do
         it "can declare static" $ idempotent "static int x;"
         it "can declare extern" $ idempotent "extern int x;"
@@ -85,4 +101,20 @@ spec = parallel $ do
 
     describe "Declaration.Array" $ do
         it "can declare a sized array" $ idempotent "int x[1];"
+        it "can declare a zero sized array" $ idempotent "int x[0];"
+        it "can declare an unsized array" $ idempotent "int x[];"
+        it "can declare cvr arrays" $ idempotent "const volatile int x[12];"
+
+    describe "Declaration.Function" $ do
+        it "can declare a simple function" $ idempotent "int square(int x);"
+
+    describe "Declaration.Typedef" $ do
+        it "can declare a simple typedef" $ idempotent "typedef int foo;"
+        it "can declare an array typedef" $ idempotent "typedef int foo[4];"
+        it "can declare a function typedef" $ idempotent "typedef int (*error_fn)(int x);"
+
+    describe "Definition.Function" $ do
+        it "can define a simple function" $
+            idempotent "int square(int x) {\n        return x * x;\n}"
+
 

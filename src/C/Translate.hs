@@ -7,6 +7,7 @@ import C.HIR
 import C.Lexer
 import C.Parser
 
+import Control.Monad
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -204,16 +205,18 @@ extractStorageClass specs = case specs of
 
         bad = Left "unsupported storage class"
 
-dsSplit :: [AST.DeclarationSpecifier] -> ([AST.StorageClass], [AST.TypeSpecifier],
+dsSplit :: [AST.DeclarationSpecifier] -> (Bool,
+                                          [AST.StorageClass], [AST.TypeSpecifier],
                                           [AST.TypeQualifier], [AST.FunctionSpecifier],
                                           [AST.AlignmentSpecifier])
-dsSplit = foldr get ([], [], [], [], [])
+dsSplit = foldr get (False, [], [], [], [], [])
     where
-        get (AST.DSStorageClass x) (sc, ts, tq, fs, align) = (x:sc, ts, tq, fs, align)
-        get (AST.DSTypeSpecifier x) (sc, ts, tq, fs, align) = (sc, x:ts, tq, fs, align)
-        get (AST.DSTypeQualifier x) (sc, ts, tq, fs, align) = (sc, ts, x:tq, fs, align)
-        get (AST.DSFunctionSpecifier x) (sc, ts, tq, fs, align) = (sc, ts, tq, x:fs, align)
-        get (AST.DSAlignmentSpecifier x) (sc, ts, tq, fs, align) = (sc, ts, tq, fs, x:align)
+        get (AST.DSStorageClass AST.Typedef) (_, sc, ts, tq, fs, align) = (True, sc, ts, tq, fs, align)
+        get (AST.DSStorageClass x) (td, sc, ts, tq, fs, align) = (td, x:sc, ts, tq, fs, align)
+        get (AST.DSTypeSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, x:ts, tq, fs, align)
+        get (AST.DSTypeQualifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, x:tq, fs, align)
+        get (AST.DSFunctionSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, tq, x:fs, align)
+        get (AST.DSAlignmentSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, tq, fs, x:align)
         get (AST.DSAttr _) r = r
 
 scanTypeQualifiers :: [AST.TypeQualifier] -> Translate (Set CVR)
@@ -233,26 +236,32 @@ xTypeSpecifier specs = case specs of
 
     where
         getTS :: AST.TypeSpecifier -> Translate RawType
-        getTS AST.Void                  = Right TyVoid
-        getTS AST.Char                  = Right $ signed CHAR
-        getTS AST.UnsignedChar          = Right $ unsigned CHAR
-        getTS AST.Short                 = Right $ signed SHORT
-        getTS AST.UnsignedShort         = Right $ unsigned SHORT
-        getTS AST.Int                   = Right $ signed INT
-        getTS AST.UnsignedInt           = Right $ unsigned INT
-        getTS AST.Int128                = Right $ signed INT128
-        getTS AST.UnsignedInt128        = Right $ unsigned INT128
-        getTS AST.Long                  = Right $ signed LONG
-        getTS AST.UnsignedLong          = Right $ unsigned LONG
-        getTS AST.LongLong              = Right $ signed LONG_LONG
-        getTS AST.UnsignedLongLong      = Right $ unsigned LONG_LONG
-        getTS AST.Float                 = Right TyFloat
-        getTS AST.Double                = Right TyDouble
-        getTS AST.Bool                  = Right TyBool
+        getTS AST.Void                  = pure TyVoid
+        getTS AST.Char                  = pure $ signed CHAR
+        getTS AST.UnsignedChar          = pure $ unsigned CHAR
+        getTS AST.Short                 = pure $ signed SHORT
+        getTS AST.UnsignedShort         = pure $ unsigned SHORT
+        getTS AST.Int                   = pure $ signed INT
+        getTS AST.UnsignedInt           = pure $ unsigned INT
+        getTS AST.Int128                = pure $ signed INT128
+        getTS AST.UnsignedInt128        = pure $ unsigned INT128
+        getTS AST.Long                  = pure $ signed LONG
+        getTS AST.UnsignedLong          = pure $ unsigned LONG
+        getTS AST.LongLong              = pure $ signed LONG_LONG
+        getTS AST.UnsignedLongLong      = pure $ unsigned LONG_LONG
+        getTS AST.Float                 = pure TyFloat
+        getTS AST.Double                = pure TyDouble
+        getTS AST.Bool                  = pure TyBool
         getTS AST.Complex               = Left "complex nrs not implemented"
         getTS AST.AtomicSpecifier       = Left "atomics not implemented"
-        getTS (AST.StructOrUnionSpecifier ty mnm fields) = undefined
-            -- getTS TyStruct (convertStructType ty) mnm (concatMap convertStructEntry $ fields)
+
+        getTS (AST.StructOrUnionSpecifier st mnm Nothing) =
+            pure $ TyStruct (xStructType st) mnm Nothing
+
+        getTS (AST.StructOrUnionSpecifier st mnm (Just fields)) = do
+            entries <- mapM xStructEntry fields
+            pure $ TyStruct (xStructType st) mnm (Just . concat $ entries)
+
         getTS (AST.EnumDefSpecifier _ _) = undefined
         getTS (AST.EnumRefSpecifier _)  = undefined
         getTS (AST.TSTypedefName _)     = undefined
@@ -262,13 +271,28 @@ xTypeSpecifier specs = case specs of
         signed x = TyInt SIGNED x
         unsigned x = TyInt UNSIGNED x
 
-{-
-        convertStructType AST.Struct = Struct
-        convertStructType AST.Union = Union
+xStructType AST.Struct = Struct
+xStructType AST.Union = Union
 
-        convertStructEntry (AST.StructDeclaration specs declarators) = undefined
-        convertStructEntry AST.StructStaticAssert = Left "Struct static assert not supported"
-        -}
+xStructDeclarator :: [AST.SpecifierQualifier] -> AST.StructDeclarator -> Translate [StructEntry]
+xStructDeclarator specs (AST.StructDeclarator decl me) = do
+    decl <- xDeclaration' (map toDeclSpec specs) decl
+    case decl of
+        (Declaration ty _ nm _) -> do
+            width <- mapM xExpression me
+            pure $ [StructEntry ty (Just nm) width]
+        _ -> Left "bad struct field"
+
+    where
+        toDeclSpec :: AST.SpecifierQualifier -> AST.DeclarationSpecifier
+        toDeclSpec (AST.SQTypeSpecifier ts) = AST.DSTypeSpecifier ts
+        toDeclSpec (AST.SQTypeQualifier tq) = AST.DSTypeQualifier tq
+
+xStructEntry :: AST.StructDeclaration -> Translate [StructEntry]
+xStructEntry (AST.StructDeclaration specs declarators) =
+    concat <$> mapM (xStructDeclarator specs) declarators
+
+xStructEntry AST.StructStaticAssert = Left "Struct static assert not supported"
 
 applyDeclarator :: Type -> (Maybe StorageClass) -> AST.Declarator -> Translate Declaration
 applyDeclarator ty sc (AST.Declarator Nothing dd) = expandDD ty sc dd
@@ -300,7 +324,16 @@ convertParams (AST.ParameterTypeList pds vararg) = do
 expandDD :: Type -> (Maybe StorageClass) -> AST.DirectDeclarator -> Translate Declaration
 expandDD ty sc (AST.DDIdentifier nm)          = Right $ Declaration ty sc nm Nothing
 expandDD ty sc (AST.DDNested d)               = applyDeclarator ty sc d
-expandDD ty sc (AST.DDArray dd' _ me _ _)     = expandDD (Type (TyArray ty (Just 0)) S.empty) sc dd'  -- FIXME: apply the qualifiers
+
+-- FIXME: apply the qualifiers
+expandDD ty sc (AST.DDArray dd' tq Nothing _ _) =
+    expandDD (Type (TyArray ty Nothing) S.empty) sc dd'
+
+-- FIXME: apply the qualifiers
+expandDD ty sc (AST.DDArray dd' tq (Just e) _ _) = do
+    e' <- xExpression e
+    expandDD (Type (TyArray ty (Just e')) S.empty) sc dd'
+
 expandDD ty sc (AST.DDFun dd' params)         = do
     ps <- convertParams params
     ed <- applyDeclarator ty sc (AST.Declarator Nothing dd')
@@ -318,9 +351,14 @@ xDeclaration' ds declarator = do
     rt <- xTypeSpecifier ts
     sClass <- extractStorageClass sc
     cvr <- scanTypeQualifiers tq
-    applyDeclarator (Type rt cvr) sClass $ declarator
+    decl <- applyDeclarator (Type rt cvr) sClass declarator
+    if isTypedef
+        then case decl of
+            (Declaration ty Nothing nm Nothing) -> pure $ TypedefDeclaration ty nm
+            _ -> Left "bad typedef"
+        else pure decl
     where
-        (sc, ts, tq, fs, align) = dsSplit ds
+        (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
 
 -- Declaration Type StorageClass Identifier (Maybe Literal)
 xDeclaration :: AST.Declaration -> Translate [Declaration]
