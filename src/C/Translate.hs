@@ -54,7 +54,33 @@ binAssign op e1 e2 = do
     pure $ AssignExp e1' (BinaryExp op e1' e2')
 
 xTypeName :: AST.TypeName -> Translate Type
-xTypeName = undefined
+xTypeName (AST.TypeName specs Nothing) = do
+    rty <- xTypeSpecifier ts
+    cvr <- scanTypeQualifiers tq
+    pure $ Type rty cvr
+    where
+        (isTypedef, sc, ts, tq,fs, align) = dsSplit $ map toDeclSpec specs
+
+xTypeName (AST.TypeName specs (Just adecl)) = do
+    rty <- xTypeSpecifier ts
+    cvr <- scanTypeQualifiers tq
+    applyAbstractDeclarator adecl (Type rty cvr)
+    where
+        (isTypedef, sc, ts, tq,fs, align) = dsSplit $ map toDeclSpec specs
+
+applyAbstractDeclarator :: AST.AbstractDeclarator -> Type -> Translate Type
+applyAbstractDeclarator (AST.AbstractPointer ptr) ty = mkPtr ptr ty
+applyAbstractDeclarator (AST.AbstractDeclarator Nothing dad) ty =
+    applyDirectAbstractDeclarator dad ty
+applyAbstractDeclarator (AST.AbstractDeclarator (Just ptr) dad) ty = do
+    ty' <- applyDirectAbstractDeclarator dad ty
+    mkPtr ptr ty'
+
+applyDirectAbstractDeclarator :: AST.DirectAbstractDeclarator -> Type -> Translate Type
+applyDirectAbstractDeclarator (AST.DANested ad) ty = applyAbstractDeclarator ad ty
+applyDirectAbstractDeclarator (AST.DAArray mdad tq me isStatic) ty = undefined
+applyDirectAbstractDeclarator (AST.DAArrayStar _) ty = undefined
+applyDirectAbstractDeclarator (AST.DAFun mdad mparams) ty = undefined
 
 xExpression :: AST.Exp -> Translate Exp
 xExpression (AST.VarExp i) =
@@ -69,8 +95,10 @@ xExpression (AST.StringConstExp str) =
 xExpression (AST.CharConstExp c) =
     pure $ LiteralExp $ CharValue (head c)
 
-xExpression (AST.CompoundLiteral tn inits) =
-    undefined
+xExpression (AST.CompoundLiteral tn inits) = do
+    ty <- xTypeName tn
+    fields <- mapM xStructField inits
+    pure $ LiteralExp (StructValue ty fields)
 
 xExpression (AST.SubscriptExp e1 e2) =
     SubscriptExp <$> xExpression e1 <*> xExpression e2
@@ -142,7 +170,7 @@ xExpression (AST.AlignofExp tn) =
     AlignofExp <$> xTypeName tn
 
 xExpression (AST.BlockExp nms items) =
-    BlockExp nms <$> mapM xBlockItem items
+    BlockExp nms . concat <$> mapM xBlockItem items
 
 xExpression (AST.BuiltinVaArg) =
     pure BuiltinVaArg
@@ -155,6 +183,9 @@ xExpression (AST.BuiltinTypesCompatible) =
 
 xExpression (AST.BuiltinConvertVector) =
     pure BuiltinConvertVector
+
+xStructField :: AST.InitializerPair -> Translate StructField
+xStructField (AST.InitializerPair mds i) = undefined
 
 --------------------------------------------------------------
 -- Declaration translation
@@ -262,14 +293,28 @@ xTypeSpecifier specs = case specs of
             entries <- mapM xStructEntry fields
             pure $ TyStruct (xStructType st) mnm (Just . concat $ entries)
 
-        getTS (AST.EnumDefSpecifier _ _) = undefined
-        getTS (AST.EnumRefSpecifier _)  = undefined
-        getTS (AST.TSTypedefName _)     = undefined
-        getTS (AST.TSTypeofExp _)       = undefined
-        getTS (AST.TSTypeofDecl _)      = undefined
+        getTS (AST.EnumDefSpecifier mnm entries) = do
+            entries' <- mapM xEnumEntry entries
+            pure $ TyEnum mnm (Just entries')
+
+        getTS (AST.EnumRefSpecifier nm)  = pure $ TyEnum (Just nm) Nothing
+
+        getTS (AST.TSTypedefName nm)     = pure $ TyAlias nm undefined
+        getTS (AST.TSTypeofExp e)        = TyTypeofExp <$> xExpression e
+        getTS (AST.TSTypeofDecl ds)   = do
+            rt <- xTypeSpecifier ts
+            cvr <- scanTypeQualifiers tq
+            pure (TyTypeofType $ Type rt cvr)
+            where
+                (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
 
         signed x = TyInt SIGNED x
         unsigned x = TyInt UNSIGNED x
+
+xEnumEntry :: AST.Enumerator -> Translate EnumEntry
+xEnumEntry (AST.Enumerator nm me) = do
+    me' <- mapM xExpression me
+    pure $ EnumEntry nm me'
 
 xStructType AST.Struct = Struct
 xStructType AST.Union = Union
@@ -283,10 +328,9 @@ xStructDeclarator specs (AST.StructDeclarator decl me) = do
             pure $ [StructEntry ty (Just nm) width]
         _ -> Left "bad struct field"
 
-    where
-        toDeclSpec :: AST.SpecifierQualifier -> AST.DeclarationSpecifier
-        toDeclSpec (AST.SQTypeSpecifier ts) = AST.DSTypeSpecifier ts
-        toDeclSpec (AST.SQTypeQualifier tq) = AST.DSTypeQualifier tq
+toDeclSpec :: AST.SpecifierQualifier -> AST.DeclarationSpecifier
+toDeclSpec (AST.SQTypeSpecifier ts) = AST.DSTypeSpecifier ts
+toDeclSpec (AST.SQTypeQualifier tq) = AST.DSTypeQualifier tq
 
 xStructEntry :: AST.StructDeclaration -> Translate [StructEntry]
 xStructEntry (AST.StructDeclaration specs declarators) =
@@ -298,22 +342,44 @@ applyDeclarator :: Type -> (Maybe StorageClass) -> AST.Declarator -> Translate D
 applyDeclarator ty sc (AST.Declarator Nothing dd) = expandDD ty sc dd
 applyDeclarator ty sc (AST.Declarator (Just ptr) dd) = expandDD ty sc dd >>= expandPtr ptr
 
--- FIXME: expand mp
-expandPtr :: AST.Pointer -> Declaration -> Translate Declaration
-expandPtr (AST.Pointer tq mp) (Declaration ty sc nm ml) = do
+mkPtr :: AST.Pointer -> Type -> Translate Type
+mkPtr (AST.Pointer tq Nothing) ty = do
     cvr <- scanTypeQualifiers tq
-    pure $ Declaration (Type (TyPointer ty) cvr) sc nm ml
-expandPtr (AST.Pointer _ _) (FunDeclaration _ _ _ _) = undefined
-expandPtr (AST.Pointer _ _) (TypedefDeclaration _ _) = undefined
+    pure $ Type (TyPointer ty) cvr
+
+mkPtr (AST.Pointer tq (Just subptr)) ty = do
+    ty' <- mkPtr subptr ty
+    cvr <- scanTypeQualifiers tq
+    pure $ Type (TyPointer ty') cvr
+
+expandPtr :: AST.Pointer -> Declaration -> Translate Declaration
+expandPtr ptr (Declaration ty sc nm ml) = do
+    ty' <- mkPtr ptr ty
+    pure $ Declaration ty' sc nm ml
+
+expandPtr _ (FunDeclaration _ _ _ _) = undefined
+expandPtr _ (TypedefDeclaration _ _) = undefined
 
 -- FIXME: check vararg
 convertParams :: AST.ParameterTypeList -> Translate [ParamEntry]
-convertParams (AST.ParameterTypeList pds vararg) = do
-    decls <- mapM expand pds
-    mapM toEntry decls
+convertParams (AST.ParameterTypeList pds vararg) = mapM expand pds
     where
-        expand (AST.PDDeclarator ds d) = xDeclaration' ds d
-        expand (AST.PDAbstract ds md) = undefined
+        expand (AST.PDDeclarator ds d) = xDeclaration' ds d >>= toEntry
+
+        expand (AST.PDAbstract ds Nothing) = do
+            rt <- xTypeSpecifier ts
+            cvr <- scanTypeQualifiers tq
+            pure $ ParamEntry (Type rt cvr) Nothing
+            where
+                (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
+
+        expand (AST.PDAbstract ds (Just adecl)) = do
+            rt <- xTypeSpecifier ts
+            cvr <- scanTypeQualifiers tq
+            ty' <- applyAbstractDeclarator adecl (Type rt cvr)
+            pure $ ParamEntry (Type rt cvr) Nothing
+            where
+                (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
 
         -- FIXME: handle anonymous params
         toEntry :: Declaration -> Translate ParamEntry
@@ -334,7 +400,7 @@ expandDD ty sc (AST.DDArray dd' tq (Just e) _ _) = do
     e' <- xExpression e
     expandDD (Type (TyArray ty (Just e')) S.empty) sc dd'
 
-expandDD ty sc (AST.DDFun dd' params)         = do
+expandDD ty sc (AST.DDFun dd' params) = do
     ps <- convertParams params
     ed <- applyDeclarator ty sc (AST.Declarator Nothing dd')
     case ed of
@@ -384,7 +450,7 @@ xStatement (AST.DefaultStatement s) =
     DefaultStatement <$> xStatement s
 
 xStatement (AST.CompoundStatement nm items) =
-    CompoundStatement nm <$> mapM xBlockItem items
+    CompoundStatement nm . concat <$> mapM xBlockItem items
 
 xStatement (AST.ExpressionStatement e) =
     ExpressionStatement <$> xExpression e
@@ -404,8 +470,13 @@ xStatement (AST.WhileStatement e s) =
 xStatement (AST.DoStatement s e) =
     DoStatement <$> xStatement s <*> xExpression e
 
-xStatement (AST.ForStatement md me1 me2 me3 s) =
-    undefined
+xStatement (AST.ForStatement md me1 me2 me3 s) = do
+    decls <- maybe (pure []) xDeclaration md
+    me1' <- mapM xExpression me1
+    me2' <- mapM xExpression me2
+    me3' <- mapM xExpression me3
+    s' <- xStatement s
+    pure $ ForStatement decls me1' me2' me3' s'
 
 xStatement (AST.GotoStatement nm) =
     pure $ GotoStatement nm
@@ -428,9 +499,11 @@ xStatement (AST.EmptyStatement) =
 xStatement (AST.AsmStatement) =
     pure AsmStatement
 
-xBlockItem :: AST.BlockItem -> Translate BlockItem
-xBlockItem (AST.BIDeclaration decl) = undefined
-xBlockItem (AST.BIStatement s) = BIStatement <$> xStatement s
+xBlockItem :: AST.BlockItem -> Translate [BlockItem]
+xBlockItem (AST.BIDeclaration decl) = map BIDeclaration <$> xDeclaration decl
+xBlockItem (AST.BIStatement s) = singleton . BIStatement <$> xStatement s
+    where
+        singleton x = [x]
 
 xTranslationUnit :: AST.TranslationUnit -> Translate TranslationUnit
 xTranslationUnit (AST.TranslationUnit edecls) =

@@ -551,8 +551,11 @@ direct_declarator :: {DirectDeclarator}
     | direct_declarator '[' 'static' type_qualifier_list_opt assignment_exp ']'	{DDArray $1 (unreverse $4) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list 'static' assignment_exp ']'	{DDArray $1 (unreverse $3) (Just $5) True False}
     | direct_declarator '[' type_qualifier_list_opt '*' ']'			{DDArray $1 (unreverse $3) Nothing False True}
-    | direct_declarator '(' parameter_type_list ')' attrs_opt			{DDFun $1 $3}
+    | direct_declarator '(' parameter_type_list_opt ')' attrs_opt		{DDFun $1 $3}
+
+{-
     | direct_declarator '(' identifier_list_opt ')' attrs_opt			{DDFunPtr $1 (unreverse $3)}
+-}
 
 pointer :: {Pointer}
     : '*' type_qualifier_list_opt attrs_opt		{Pointer (unreverse $2) Nothing}
@@ -574,9 +577,9 @@ parameter_type_list :: {ParameterTypeList}
     : parameter_list			{ParameterTypeList (unreverse $1) False}
     | parameter_list ',' '...'		{ParameterTypeList (unreverse $1) True}
 
-parameter_type_list_opt :: {Maybe ParameterTypeList}
-    : {- empty -}		{Nothing}
-    | parameter_type_list	{Just $1}
+parameter_type_list_opt :: {ParameterTypeList}
+    : {- empty -}		{ParameterTypeList [] False}
+    | parameter_type_list	{$1}
 
 parameter_list :: {Reversed ParameterDeclaration}
     : parameter_declaration				{Reversed [$1]}

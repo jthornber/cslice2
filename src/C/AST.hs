@@ -263,7 +263,7 @@ data DirectAbstractDeclarator =
     DANested AbstractDeclarator |
     DAArray (Maybe DirectAbstractDeclarator) [TypeQualifier] (Maybe Exp) Bool |
     DAArrayStar (Maybe DirectAbstractDeclarator) |
-    DAFun (Maybe DirectAbstractDeclarator) (Maybe ParameterTypeList)
+    DAFun (Maybe DirectAbstractDeclarator) ParameterTypeList
     deriving (Eq, Show)
 
 data Asm = Asm

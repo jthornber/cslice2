@@ -16,6 +16,7 @@ module C.HIR (
     Declaration(..),
     Literal(..),
     Value(..),
+    StructField(..),
     StorageClass(..),
     Statement(..),
     BlockItem(..),
@@ -25,9 +26,17 @@ module C.HIR (
 
 import C.Identifier
 
+import Data.List (intercalate)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text.Prettyprint.Doc
+
+withBraces :: Doc ann -> [Doc ann] -> Doc ann
+withBraces sep [] = braces emptyDoc
+withBraces sep xs = concatWith (<>) [lbrace, line, indent 8 entries, line, rbrace]
+    where
+        entries = concatWith join xs
+        join x y = x <> sep <> line <> y
 
 -- Includes trailing space if non-empty result
 printCVR :: Set CVR -> Doc ann
@@ -36,83 +45,67 @@ printCVR cvr = case S.toList cvr of
     xs -> (hsep . map pretty $ xs) <> space
 
 printType :: Type -> Maybe Identifier -> Doc ann
-printType (Type rt cvr) Nothing = printCVR cvr <> printAbstractType rt
-printType (Type rt cvr) (Just nm) = printCVR cvr <> printConcreteType rt nm
+printType (Type rt cvr) mnm = printCVR cvr <> printRawType rt mnm
 
-printAbstractType :: RawType -> Doc ann
-printAbstractType TyVoid = pretty "void"
-printAbstractType TyBool = pretty "bool"
+addName :: Doc ann -> Maybe Identifier -> Doc ann
+addName d Nothing = d
+addName d (Just nm) = d <+> pretty nm
 
-printAbstractType (TyInt sign ty) =
-    pretty sign <> pretty ty
+printRawType :: RawType -> (Maybe Identifier) -> Doc ann
+printRawType TyVoid mnm = pretty "void" `addName` mnm
+printRawType TyBool mnm = pretty "__Bool" `addName` mnm
 
-printAbstractType TyFloat = pretty "float"
-printAbstractType TyDouble = pretty "double"
+printRawType (TyInt sign ty) mnm = pretty sign <> pretty ty `addName` mnm
 
-printAbstractType TyLongDouble = pretty "long double"
+printRawType TyFloat mnm = pretty "float" `addName` mnm
+printRawType TyDouble mnm = pretty "double" `addName` mnm
 
-printAbstractType (TyEnumeration mnm menum) = undefined
+printRawType TyLongDouble mnm = pretty "long double" `addName` mnm
 
-printAbstractType (TyArray ty Nothing) =
-    printType ty Nothing <> lbracket <> rbracket
+printRawType (TyEnum mnm' mentries) mnm = header <> body `addName` mnm
+    where
+        header = pretty "enum" `addName` mnm'
+        body = case mentries of
+            (Just entries) -> space <> (withBraces comma $ map pretty entries)
+            _ -> emptyDoc
 
-printAbstractType (TyArray ty (Just size)) = hcat [
-    printType ty Nothing,
+printRawType (TyArray ty Nothing) mnm =
+    (printType ty mnm) <> lbracket <> rbracket
+
+printRawType (TyArray ty (Just size)) mnm = hcat [
+    printType ty mnm,
     lbracket,
     pretty size,
     rbracket]
 
-printAbstractType (TyStruct st mnm mentries) = header <+> body
+printRawType (TyStruct st mnm' mentries) mnm = header <> body `addName` mnm
     where
-        header = hsep [pretty "struct", maybe emptyDoc pretty mnm]
+        header = pretty "struct" `addName` mnm'
         body = case mentries of
             Nothing -> emptyDoc
-            (Just entries) -> lbracket <+> (vsep $ map pretty entries) <+> rbracket
+            (Just []) -> space <> braces emptyDoc
+            (Just entries) -> space <>
+                              lbrace <>
+                              line <>
+                              indent 8 (vsep $ map ((<> semi) . pretty) $ entries) <>
+                              line <>
+                              rbrace
 
-printAbstractType (TyPointer ty) =
-    printType ty Nothing <+> (pretty '*')
+printRawType (TyPointer ty@(Type (TyFunction _) _)) Nothing = printType ty Nothing <> (pretty '*') <> pretty "blip"
+printRawType (TyPointer ty@(Type (TyFunction _) _)) (Just nm) =
+    printType ty Nothing <> (pretty '*') <> pretty nm <> pretty "blip"
 
-printAbstractType (TyFunction ft) = prettyFun ft Nothing
+printRawType (TyPointer ty@(Type (TyPointer _) _)) Nothing = printType ty Nothing <> (pretty '*')
+printRawType (TyPointer ty@(Type (TyPointer _) _)) (Just nm) =
+    printType ty Nothing <> (pretty '*') <> pretty nm
 
-printAbstractType (TyAlias nm _) = pretty nm
+printRawType (TyPointer ty) Nothing = printType ty Nothing <+> (pretty '*')
+printRawType (TyPointer ty) (Just nm) = printType ty Nothing <+> (pretty '*') <> pretty nm
 
-printConcreteType :: RawType -> Identifier -> Doc ann
-printConcreteType TyVoid nm = pretty "void" <+> pretty nm
-printConcreteType TyBool nm = pretty "bool" <+> pretty nm
+printRawType (TyFunction ft) Nothing = prettyFun ft (pretty "(*)")
+printRawType (TyFunction ft) (Just nm) = prettyFun ft (pretty nm)
 
-printConcreteType (TyInt sign ty) nm =
-    pretty sign <> pretty ty <+> pretty nm
-
-printConcreteType TyFloat nm = pretty "float" <+> pretty nm
-printConcreteType TyDouble nm = pretty "double" <+> pretty nm
-
-printConcreteType TyLongDouble nm = pretty "long double" <+> pretty nm
-
-printConcreteType (TyEnumeration mnm menum) _ = undefined
-
-printConcreteType (TyArray ty Nothing) nm =
-    printType ty (Just nm) <> lbracket <> rbracket
-
-printConcreteType (TyArray ty (Just size)) nm = hcat [
-    printType ty (Just nm),
-    lbracket,
-    pretty size,
-    rbracket]
-
-printConcreteType (TyStruct st mnm mentries) nm = header <> body <> pretty nm
-    where
-        header = pretty "struct" <+> (maybe emptyDoc ((<> space) . pretty) $ mnm)
-        body = case mentries of
-            Nothing -> emptyDoc
-            (Just []) -> braces emptyDoc <> space
-            (Just entries) -> lbrace <> line <> indent 8 (vsep $ map ((<> semi) . pretty) $ entries) <> line <> rbrace <> space
-
-printConcreteType (TyPointer ty) nm =
-    printType ty Nothing <+> (pretty '*') <+> pretty nm
-
-printConcreteType (TyFunction ft) nm = prettyFun ft (Just nm)
-
-printConcreteType (TyAlias alias _) nm = pretty alias <+> pretty nm
+printRawType (TyAlias alias _) mnm = pretty alias `addName` mnm
 
 data IntType =
     CHAR |
@@ -131,11 +124,12 @@ instance Pretty IntType where
     pretty LONG = pretty "long"
     pretty LONG_LONG = pretty "long long"
 
-data EnumEntry = EnumEntry Identifier Integer
+data EnumEntry = EnumEntry Identifier (Maybe Exp)
     deriving (Eq, Show)
 
 instance Pretty EnumEntry where
-    pretty (EnumEntry nm n) = (pretty nm) <+> (pretty "=") <+> (pretty n)
+    pretty (EnumEntry nm (Just n)) = (pretty nm) <+> (pretty "=") <+> (pretty n)
+    pretty (EnumEntry nm Nothing) = pretty nm
 
 data StructEntry = StructEntry Type (Maybe Identifier) (Maybe Exp)
     deriving (Eq, Show)
@@ -166,8 +160,8 @@ instance Pretty FunFlag where
 data FunType = FunType Type [ParamEntry] (Set FunFlag)
     deriving (Eq, Show)
 
-prettyFun :: FunType -> Maybe Identifier -> Doc ann
-prettyFun (FunType t params flags) mnm = inline <> noreturn <> printType t mnm <> params'
+prettyFun :: FunType -> Doc ann -> Doc ann
+prettyFun (FunType t params flags) nm = inline <> noreturn <> printType t Nothing <+> nm <> params'
    where
     flag f = if S.member f flags
              then pretty f <> pretty " "
@@ -211,7 +205,7 @@ data RawType =
     TyLongDouble |
 
     -- Enumerations
-    TyEnumeration (Maybe Identifier) (Maybe [EnumEntry]) |
+    TyEnum (Maybe Identifier) (Maybe [EnumEntry]) |
 
     -- Derived types
     TyArray Type (Maybe Exp) |
@@ -221,7 +215,10 @@ data RawType =
     TyFunction FunType |
 
     -- Typedefs.  This is a reference to a previously defined typedef
-    TyAlias Identifier Type
+    TyAlias Identifier Type |
+
+    TyTypeofExp Exp |
+    TyTypeofType Type
 
     deriving (Eq, Show)
 
@@ -446,7 +443,7 @@ data Value =
     FloatValue Float |
     DoubleValue Double |
     EnumValue Identifier |
-    StructValue [Value] |
+    StructValue Type [StructField] |
     StringValue String |
     CharValue Char
     deriving (Eq, Show)
@@ -456,9 +453,17 @@ instance Pretty Value where
     pretty (FloatValue f) = pretty f
     pretty (DoubleValue d) = pretty d
     pretty (EnumValue nm) = pretty nm
-    pretty (StructValue vs) = encloseSep lbrace rbrace comma $ map pretty vs
+    pretty (StructValue _ vs) = encloseSep lbrace rbrace comma $ map pretty vs
     pretty (StringValue str) = dquotes $ pretty str    -- FIXME: handle quoting
     pretty (CharValue c) = squotes $ pretty c          -- FIXME: handle quoting
+
+data StructField =
+    StructField (Maybe Identifier) Value
+    deriving (Eq, Show)
+
+instance Pretty StructField where
+    pretty (StructField Nothing v) = pretty v
+    pretty (StructField (Just nm) v) = pretty "." <> pretty nm <+> pretty "=" <+> pretty v
 
 data StorageClass =
     Extern |
@@ -483,7 +488,7 @@ data Statement =
     SwitchStatement Exp Statement |
     WhileStatement Exp Statement |
     DoStatement Statement Exp |
-    ForStatement (Maybe Declaration) (Maybe Exp) (Maybe Exp) (Maybe Exp) Statement |
+    ForStatement [Declaration] (Maybe Exp) (Maybe Exp) (Maybe Exp) Statement |
     GotoStatement Identifier |
     ContinueStatement |
     BreakStatement |
@@ -514,7 +519,9 @@ instance Pretty Statement where
 
     -- FIXME: what are the identifiers?
     pretty (CompoundStatement _ items) =
-        withSemi . brackets . indent 8 . vsep . map pretty $ items
+        nest 8 (lbrace <> line <> body) <> line <> rbrace
+        where
+            body = vsep $ map pretty items
 
     pretty (ExpressionStatement e) = withSemi $ pretty e
 
@@ -540,8 +547,8 @@ instance Pretty Statement where
         pretty "do" <> pretty s,
         parens $ pretty e]
 
-    pretty (ForStatement md me1 me2 me3 s) = withSemi $ vsep [
-        hsep [pretty "for", lparen, praps md, praps me1,
+    pretty (ForStatement decls me1 me2 me3 s) = withSemi $ vsep [
+        hsep [pretty "for", lparen, pretty decls, praps me1,
               semi, praps me2, semi, praps me3, rparen],
         pretty s]
 
@@ -584,6 +591,6 @@ data ExternalDeclaration =
 
 instance Pretty ExternalDeclaration where
     pretty (ExternalDeclaration decl) = pretty decl <> semi
-    pretty (FunDef ft s) = prettyFun ft Nothing <> pretty s
+    pretty (FunDef ft s) = prettyFun ft emptyDoc <+> pretty s
     pretty (AsmDeclaration) = error "asm not supported"
 
