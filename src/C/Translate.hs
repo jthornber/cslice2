@@ -80,7 +80,15 @@ applyDirectAbstractDeclarator :: AST.DirectAbstractDeclarator -> Type -> Transla
 applyDirectAbstractDeclarator (AST.DANested ad) ty = applyAbstractDeclarator ad ty
 applyDirectAbstractDeclarator (AST.DAArray mdad tq me isStatic) ty = undefined
 applyDirectAbstractDeclarator (AST.DAArrayStar _) ty = undefined
-applyDirectAbstractDeclarator (AST.DAFun mdad mparams) ty = undefined
+
+applyDirectAbstractDeclarator (AST.DAFun Nothing params) ty = do
+    params' <- convertParams params
+    pure $ Type (TyFunction (FunType ty params' S.empty)) S.empty
+
+-- FIXME: finish
+applyDirectAbstractDeclarator (AST.DAFun (Just _) params) ty = do
+    params' <- convertParams params
+    pure $ Type (TyFunction (FunType ty params' S.empty)) S.empty
 
 xExpression :: AST.Exp -> Translate Exp
 xExpression (AST.VarExp i) =
@@ -97,8 +105,8 @@ xExpression (AST.CharConstExp c) =
 
 xExpression (AST.CompoundLiteral tn inits) = do
     ty <- xTypeName tn
-    fields <- mapM xStructField inits
-    pure $ LiteralExp (StructValue ty fields)
+    fields <- mapM xInitializerPair inits
+    pure $ LiteralExp (CompoundValue ty fields)
 
 xExpression (AST.SubscriptExp e1 e2) =
     SubscriptExp <$> xExpression e1 <*> xExpression e2
@@ -184,8 +192,17 @@ xExpression (AST.BuiltinTypesCompatible) =
 xExpression (AST.BuiltinConvertVector) =
     pure BuiltinConvertVector
 
-xStructField :: AST.InitializerPair -> Translate StructField
-xStructField (AST.InitializerPair mds i) = undefined
+xInitializerPair :: AST.InitializerPair -> Translate InitializerPair
+xInitializerPair (AST.InitializerPair Nothing i) = InitializerPair Nothing <$> xInitializer i
+xInitializerPair (AST.InitializerPair (Just ds) i) = InitializerPair <$> (Just <$> mapM xDesignator ds) <*> xInitializer i
+
+xDesignator :: AST.Designator -> Translate Designator
+xDesignator (AST.SubscriptDesignator e) = SubscriptDesignator <$> xExpression e
+xDesignator (AST.StructDesignator nm) = pure $ StructDesignator nm
+
+xInitializer :: AST.Initializer -> Translate Initializer
+xInitializer (AST.InitAssign e) = InitAssign <$> xExpression e
+xInitializer (AST.InitList pairs) = InitList <$> mapM xInitializerPair pairs
 
 --------------------------------------------------------------
 -- Declaration translation
@@ -299,7 +316,7 @@ xTypeSpecifier specs = case specs of
 
         getTS (AST.EnumRefSpecifier nm)  = pure $ TyEnum (Just nm) Nothing
 
-        getTS (AST.TSTypedefName nm)     = pure $ TyAlias nm undefined
+        getTS (AST.TSTypedefName nm)     = pure $ TyAlias nm
         getTS (AST.TSTypeofExp e)        = TyTypeofExp <$> xExpression e
         getTS (AST.TSTypeofDecl ds)   = do
             rt <- xTypeSpecifier ts
@@ -327,6 +344,9 @@ xStructDeclarator specs (AST.StructDeclarator decl me) = do
             width <- mapM xExpression me
             pure $ [StructEntry ty (Just nm) width]
         _ -> Left "bad struct field"
+xStructDeclarator specs (AST.StructDeclaratorNoDecl e) = do
+    e' <- xExpression e
+    pure [StructEntryWidthOnly e']
 
 toDeclSpec :: AST.SpecifierQualifier -> AST.DeclarationSpecifier
 toDeclSpec (AST.SQTypeSpecifier ts) = AST.DSTypeSpecifier ts
@@ -432,7 +452,7 @@ xDeclaration (AST.Declaration ds declarators) =
     mapM (xDeclaration' ds) .
     map initToDecl $
     declarators
-xDeclaration _ = undefined
+xDeclaration AST.StaticAssert = pure []
 
 ---------------------------------------------------------------------
 -- Statement translation
@@ -517,11 +537,11 @@ xExternalDeclaration (AST.ExternalDeclaration d) = do
 xExternalDeclaration (AST.FunDef specs d decls s) = do
     d' <- xDeclaration' specs d
     case d' of
-        (Declaration t _ _ _) -> do
+        (Declaration t@(Type (TyFunction ft) _) _ nm  _) -> do
             params' <- xParams decls
-            (singleton . FunDef (FunType t params' S.empty)) <$> xStatement s
-        (FunDeclaration _ _ _ _) -> undefined
-        (TypedefDeclaration _ _) -> undefined
+            s' <- xStatement s
+            pure [FunDef ft nm s'] -- FIXME: missing cvr
+        x -> pure [ExternalDeclaration x]
     where
         singleton = (: [])
 

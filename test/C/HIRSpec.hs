@@ -144,7 +144,7 @@ spec = parallel $ do
 
     describe "Definition.Function" $ do
         it "can define a simple function" $
-            printSame "int square(int x) {\n        return x * x;\n}"
+            printSame "int square(int x) {\n        return (x) * (x);\n}"
 
     describe "Expression.Assignment" $ do
         it "can show a simple assignment" $ printSame $ inFn "x = 4;"
