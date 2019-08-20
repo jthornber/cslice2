@@ -5,6 +5,7 @@ import C.Parser
 import C.Translate
 
 import Control.Monad
+import Control.Monad.Except
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Util
 
@@ -19,8 +20,7 @@ main = do
         Right ast' -> do
             print ast'
             putStrLn "\n"
-
-            case xTranslationUnit ast' of
+            case toHir ast' of
                 Left e -> error e
                 Right hir -> do
                     print hir

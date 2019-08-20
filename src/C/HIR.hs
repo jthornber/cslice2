@@ -27,6 +27,7 @@ module C.HIR (
     ) where
 
 import C.Identifier
+import C.SymbolTable
 
 import Data.List (intercalate)
 import Data.Set (Set)
@@ -44,9 +45,12 @@ mPretty :: (Pretty a) => Maybe a -> Doc ann
 mPretty Nothing = emptyDoc
 mPretty (Just x) = pretty x
 
-addName :: Doc ann -> Maybe Identifier -> Doc ann
+addName :: Doc ann -> Maybe Symbol -> Doc ann
 addName d Nothing = d
 addName d (Just nm) = d <> space <> pretty nm
+
+instance Pretty Symbol where
+    pretty (Symbol nm _ _) = pretty nm
 
 -- Includes trailing space if non-empty result
 printCVR :: Set CVR -> Doc ann
@@ -122,7 +126,7 @@ instance Pretty IntType where
     pretty LONG = pretty "long"
     pretty LONG_LONG = pretty "long long"
 
-data EnumEntry = EnumEntry Identifier (Maybe Exp)
+data EnumEntry = EnumEntry Symbol (Maybe Exp)
     deriving (Eq, Show)
 
 instance Pretty EnumEntry where
@@ -130,7 +134,7 @@ instance Pretty EnumEntry where
     pretty (EnumEntry nm Nothing) = pretty nm
 
 data StructEntry =
-    StructEntry Type (Maybe Identifier) (Maybe Exp) |
+    StructEntry Type (Maybe Symbol) (Maybe Exp) |
     StructEntryWidthOnly Exp
     deriving (Eq, Show)
 
@@ -141,7 +145,7 @@ instance Pretty StructEntry where
     pretty (StructEntryWidthOnly e) = pretty ":" <+> pretty e
 
 data ParamEntry =
-    ParamEntry Type (Maybe Identifier)
+    ParamEntry Type (Maybe Symbol)
     deriving (Eq, Show)
 
 instance Pretty ParamEntry where
@@ -208,17 +212,17 @@ data RawType =
     TyLongDouble |
 
     -- Enumerations
-    TyEnum (Maybe Identifier) (Maybe [EnumEntry]) |
+    TyEnum (Maybe Symbol) (Maybe [EnumEntry]) |
 
     -- Derived types
     TyArray Type (Maybe Exp) |
-    TyStruct StructType (Maybe Identifier) (Maybe [StructEntry]) |
+    TyStruct StructType (Maybe Symbol) (Maybe [StructEntry]) |
     TyPointer Type |
 
     TyFunction FunType |
 
     -- Typedefs.  This is a reference to a previously defined typedef
-    TyAlias Identifier |
+    TyAlias Symbol |
 
     TyTypeofExp Exp |
     TyTypeofType Type
@@ -308,12 +312,12 @@ instance Pretty UnaryOp where
     pretty POST_DEC = pretty "--"
 
 data Exp =
-    VarExp Identifier |
+    VarExp Symbol |
     LiteralExp Value |
     SubscriptExp Exp Exp |
     FuncallExp Exp [Exp] |
-    StructElt Exp Identifier |
-    StructDeref Exp Identifier |
+    StructElt Exp Symbol |
+    StructDeref Exp Symbol |
     CommaExp Exp Exp |
     AssignExp Exp Exp |
     ConditionalExp Exp Exp Exp |
@@ -323,7 +327,7 @@ data Exp =
     SizeofValueExp Exp |
     SizeofTypeExp Type |
     AlignofExp Type |
-    BlockExp [Identifier] [BlockItem] |     -- GNU extension
+    BlockExp [Symbol] [BlockItem] |     -- GNU extension
     BuiltinVaArg |
     BuiltinOffsetOf |
     BuiltinTypesCompatible |
@@ -403,9 +407,9 @@ instance Pretty Exp where
     pretty (BuiltinConvertVector) = pretty "__builtinconvertvector"
 
 data Declaration =
-    Declaration Type (Maybe StorageClass) Identifier (Maybe Literal) |
-    FunDeclaration Type StorageClass Identifier (Set FunctionSpecifier) |
-    TypedefDeclaration Type Identifier
+    Declaration Type (Maybe StorageClass) Symbol (Maybe Literal) |
+    FunDeclaration Type StorageClass Symbol (Set FunctionSpecifier) |
+    TypedefDeclaration Type Symbol
     deriving (Eq, Show)
 
 instance Pretty Declaration where
@@ -445,7 +449,7 @@ data Value =
     IntValue Integer |
     FloatValue Float |
     DoubleValue Double |
-    EnumValue Identifier |
+    EnumValue Symbol |
     CompoundValue Type [InitializerPair] |
     StringValue String |
     CharValue Char
@@ -478,7 +482,7 @@ instance Pretty InitializerPair where
 
 data Designator =
     SubscriptDesignator Exp |
-    StructDesignator Identifier
+    StructDesignator Symbol
     deriving (Eq, Show)
 
 instance Pretty Designator where
@@ -499,17 +503,17 @@ instance Pretty StorageClass where
     pretty Register = pretty "register"
 
 data Statement =
-    LabelStatement Identifier Statement |
+    LabelStatement Symbol Statement |
     CaseStatement Exp (Maybe Exp) Statement |
     DefaultStatement Statement |
-    CompoundStatement [Identifier] [BlockItem] |
+    CompoundStatement [Symbol] [BlockItem] |
     ExpressionStatement Exp |
     IfStatement Exp Statement (Maybe Statement) |
     SwitchStatement Exp Statement |
     WhileStatement Exp Statement |
     DoStatement Statement Exp |
     ForStatement [Declaration] (Maybe Exp) (Maybe Exp) (Maybe Exp) Statement |
-    GotoStatement Identifier |
+    GotoStatement Symbol |
     ContinueStatement |
     BreakStatement |
     ReturnStatement (Maybe Exp) |
@@ -605,7 +609,7 @@ instance Pretty TranslationUnit where
 
 data ExternalDeclaration =
     ExternalDeclaration Declaration |
-    FunDef FunType Identifier Statement |
+    FunDef FunType Symbol Statement |
     AsmDeclaration
     deriving (Eq, Show)
 

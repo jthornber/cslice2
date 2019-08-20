@@ -1,15 +1,80 @@
 module C.Translate (
-    xTranslationUnit
+    toHir
     ) where
 
 import qualified C.AST as AST
 import C.HIR
+import C.Identifier
 import C.Lexer
 import C.Parser
+import C.SymbolTable (SymbolTable, Symbol)
+import qualified C.SymbolTable as ST
 
 import Control.Monad
+import Control.Monad.Except
+import Control.Monad.State.Lazy
+
 import Data.Set (Set)
 import qualified Data.Set as S
+
+---------------------------------------------------------------------
+-- Monad
+data TranslateState = TranslateState {
+    tsSymbolTable :: SymbolTable
+}
+
+data TranslateError = TranslateError String
+    deriving (Show)
+
+type Translate = ExceptT TranslateError (State TranslateState)
+
+runTranslate :: Translate a -> Either String a
+runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty) of
+    (Left (TranslateError msg)) -> Left msg
+    (Right x') -> Right x'
+
+mkDef :: (Identifier -> SymbolTable -> (SymbolTable, Symbol)) -> Identifier -> Translate Symbol
+mkDef fn nm = do
+    (TranslateState st) <- get
+    let (st', sym) = fn nm st
+    put $ TranslateState st'
+    pure sym
+
+mkRef :: (Identifier -> SymbolTable -> Symbol) -> Identifier -> Translate Symbol
+mkRef fn nm = gets $ fn nm . tsSymbolTable
+
+defFun, defStruct, defStructElt, defEnum, defEnumElt, defLabel, defVar, defTypedef
+    :: Identifier -> Translate Symbol
+defFun = mkDef ST.defFun
+defStruct = mkDef ST.defStruct
+defStructElt = mkDef ST.defStructElt
+defEnum = mkDef ST.defEnum
+defEnumElt = mkDef ST.defEnumElt
+defLabel = mkDef ST.defLabel
+defVar = mkDef ST.defVar
+defTypedef = mkDef ST.defTypedef
+
+refFun, refStruct, refStructElt, refEnum, refEnumElt, refLabel, refVar, refTypedef
+    :: Identifier -> Translate Symbol
+refFun = mkRef ST.refFun
+refStruct = mkRef ST.refStruct
+refStructElt = mkRef ST.refStructElt
+refEnum = mkRef ST.refEnum
+refEnumElt = mkRef ST.refEnumElt
+refLabel = mkRef ST.refLabel
+refVar = mkRef ST.refVar
+refTypedef = mkRef ST.refTypedef
+
+concatMapM fn xs = do
+    xs' <- mapM fn xs
+    pure $ concat xs'
+
+maybeT :: (a -> Translate b) -> Maybe a -> Translate (Maybe b)
+maybeT fn Nothing = pure Nothing
+maybeT fn (Just x) = Just <$> fn x
+
+barf :: String -> Translate a
+barf txt = throwError (TranslateError txt)
 
 ---------------------------------------------------------------------
 -- Expression translation
@@ -92,7 +157,7 @@ applyDirectAbstractDeclarator (AST.DAFun (Just _) params) ty = do
 
 xExpression :: AST.Exp -> Translate Exp
 xExpression (AST.VarExp i) =
-    pure $ VarExp i
+    VarExp <$> refVar i
 
 xExpression (AST.IntConstExp n) =
     pure $ LiteralExp $ IntValue n
@@ -115,10 +180,10 @@ xExpression (AST.FuncallExp e params) =
     FuncallExp <$> xExpression e <*> mapM xExpression params
 
 xExpression (AST.StructElt e n) =
-    StructElt <$> xExpression e <*> pure n
+    StructElt <$> xExpression e <*> refVar n
 
 xExpression (AST.StructDeref e n) =
-    StructDeref <$> xExpression e <*> pure n
+    StructDeref <$> xExpression e <*> refVar n
 
 xExpression (AST.CommaExp e1 e2) =
     CommaExp <$> xExpression e1 <*> xExpression e2
@@ -178,7 +243,7 @@ xExpression (AST.AlignofExp tn) =
     AlignofExp <$> xTypeName tn
 
 xExpression (AST.BlockExp nms items) =
-    BlockExp nms . concat <$> mapM xBlockItem items
+    BlockExp <$> mapM refVar nms <*> concatMapM xBlockItem items
 
 xExpression (AST.BuiltinVaArg) =
     pure BuiltinVaArg
@@ -198,7 +263,7 @@ xInitializerPair (AST.InitializerPair (Just ds) i) = InitializerPair <$> (Just <
 
 xDesignator :: AST.Designator -> Translate Designator
 xDesignator (AST.SubscriptDesignator e) = SubscriptDesignator <$> xExpression e
-xDesignator (AST.StructDesignator nm) = pure $ StructDesignator nm
+xDesignator (AST.StructDesignator nm) = StructDesignator <$> refStruct nm
 
 xInitializer :: AST.Initializer -> Translate Initializer
 xInitializer (AST.InitAssign e) = InitAssign <$> xExpression e
@@ -234,24 +299,22 @@ Processing an AST.StructDeclaration gives us:
   ([(Type, Maybe Identifier, Int)])
 -}
 
-type Translate a = Either String a
-
 extractStorageClass :: [AST.StorageClass] -> Translate (Maybe StorageClass)
 extractStorageClass specs = case specs of
-    []  -> Right Nothing
+    []  -> pure Nothing
     [x] -> getSC x
-    _   -> Left $ "Too many storage classes: " ++ (show specs)
+    _   -> barf $ "Too many storage classes: " ++ (show specs)
     where
         -- Typedef is a storage clas in the AST, but a separate
         -- declaration type in HIR.
         getSC AST.Typedef       = bad
-        getSC AST.Extern        = Right $ Just Extern
-        getSC AST.Static        = Right $ Just Static
+        getSC AST.Extern        = pure $ Just Extern
+        getSC AST.Static        = pure $ Just Static
         getSC AST.ThreadLocal   = bad
-        getSC AST.Auto          = Right $ Just Auto
-        getSC AST.Register      = Right $ Just Register
+        getSC AST.Auto          = pure $ Just Auto
+        getSC AST.Register      = pure $ Just Register
 
-        bad = Left "unsupported storage class"
+        bad = barf "unsupported storage class"
 
 dsSplit :: [AST.DeclarationSpecifier] -> (Bool,
                                           [AST.StorageClass], [AST.TypeSpecifier],
@@ -268,19 +331,18 @@ dsSplit = foldr get (False, [], [], [], [], [])
         get (AST.DSAttr _) r = r
 
 scanTypeQualifiers :: [AST.TypeQualifier] -> Translate (Set CVR)
-scanTypeQualifiers = foldr insert (Right S.empty)
+scanTypeQualifiers = foldM insert S.empty
     where
-        insert _ e@(Left _)     = e
-        insert AST.Const s    = S.insert CONST <$> s
-        insert AST.Volatile s = S.insert VOLATILE <$> s
-        insert AST.Restrict s = S.insert RESTRICT <$> s
-        insert AST.Atomic _   = Left "Atomic not supported"
+        insert s AST.Const    = pure $ S.insert CONST s
+        insert s AST.Volatile = pure $ S.insert VOLATILE s
+        insert s AST.Restrict = pure $ S.insert RESTRICT s
+        insert _ AST.Atomic   = barf "Atomic not supported"
 
 xTypeSpecifier :: [AST.TypeSpecifier] -> Translate RawType
 xTypeSpecifier specs = case specs of
-    [] -> Left "No type specifier given"
+    [] -> barf "No type specifier given"
     [x] -> getTS x
-    _ -> Left $ "Too many type specifiers: " ++ (show specs)
+    _ -> barf $ "Too many type specifiers: " ++ (show specs)
 
     where
         getTS :: AST.TypeSpecifier -> Translate RawType
@@ -300,23 +362,34 @@ xTypeSpecifier specs = case specs of
         getTS AST.Float                 = pure TyFloat
         getTS AST.Double                = pure TyDouble
         getTS AST.Bool                  = pure TyBool
-        getTS AST.Complex               = Left "complex nrs not implemented"
-        getTS AST.AtomicSpecifier       = Left "atomics not implemented"
+        getTS AST.Complex               = barf "complex nrs not implemented"
+        getTS AST.AtomicSpecifier       = barf "atomics not implemented"
 
-        getTS (AST.StructOrUnionSpecifier st mnm Nothing) =
-            pure $ TyStruct (xStructType st) mnm Nothing
+        getTS (AST.StructOrUnionSpecifier st mnm Nothing) = do
+            case mnm of
+                Nothing -> pure $ TyStruct (xStructType st) Nothing Nothing
+                (Just nm) -> do
+                    sym <- defStruct nm
+                    pure $ TyStruct (xStructType st) (Just sym) Nothing
 
         getTS (AST.StructOrUnionSpecifier st mnm (Just fields)) = do
             entries <- mapM xStructEntry fields
-            pure $ TyStruct (xStructType st) mnm (Just . concat $ entries)
+            msym <- maybeT defStruct mnm
+            pure $ TyStruct (xStructType st) msym (Just . concat $ entries)
 
         getTS (AST.EnumDefSpecifier mnm entries) = do
             entries' <- mapM xEnumEntry entries
-            pure $ TyEnum mnm (Just entries')
+            msym <- maybeT defEnum mnm
+            pure $ TyEnum msym (Just entries')
 
-        getTS (AST.EnumRefSpecifier nm)  = pure $ TyEnum (Just nm) Nothing
+        getTS (AST.EnumRefSpecifier nm)  = do
+            sym <- refEnum nm
+            pure $ TyEnum (Just sym) Nothing
 
-        getTS (AST.TSTypedefName nm)     = pure $ TyAlias nm
+        getTS (AST.TSTypedefName nm)     = do
+            sym <- refTypedef nm
+            pure $ TyAlias sym
+
         getTS (AST.TSTypeofExp e)        = TyTypeofExp <$> xExpression e
         getTS (AST.TSTypeofDecl ds)   = do
             rt <- xTypeSpecifier ts
@@ -330,8 +403,9 @@ xTypeSpecifier specs = case specs of
 
 xEnumEntry :: AST.Enumerator -> Translate EnumEntry
 xEnumEntry (AST.Enumerator nm me) = do
+    sym <- defEnumElt nm
     me' <- mapM xExpression me
-    pure $ EnumEntry nm me'
+    pure $ EnumEntry sym me'
 
 xStructType AST.Struct = Struct
 xStructType AST.Union = Union
@@ -340,10 +414,10 @@ xStructDeclarator :: [AST.SpecifierQualifier] -> AST.StructDeclarator -> Transla
 xStructDeclarator specs (AST.StructDeclarator decl me) = do
     decl <- xDeclaration' (map toDeclSpec specs) decl
     case decl of
-        (Declaration ty _ nm _) -> do
+        (Declaration ty _ sym _) -> do
             width <- mapM xExpression me
-            pure $ [StructEntry ty (Just nm) width]
-        _ -> Left "bad struct field"
+            pure $ [StructEntry ty (Just sym) width]
+        _ -> barf "bad struct field"
 xStructDeclarator specs (AST.StructDeclaratorNoDecl e) = do
     e' <- xExpression e
     pure [StructEntryWidthOnly e']
@@ -356,7 +430,7 @@ xStructEntry :: AST.StructDeclaration -> Translate [StructEntry]
 xStructEntry (AST.StructDeclaration specs declarators) =
     concat <$> mapM (xStructDeclarator specs) declarators
 
-xStructEntry AST.StructStaticAssert = Left "Struct static assert not supported"
+xStructEntry AST.StructStaticAssert = barf "Struct static assert not supported"
 
 applyDeclarator :: Type -> (Maybe StorageClass) -> AST.Declarator -> Translate Declaration
 applyDeclarator ty sc (AST.Declarator Nothing dd) = expandDD ty sc dd
@@ -403,12 +477,14 @@ convertParams (AST.ParameterTypeList pds vararg) = mapM expand pds
 
         -- FIXME: handle anonymous params
         toEntry :: Declaration -> Translate ParamEntry
-        toEntry (Declaration t msc nm ml) = Right $ ParamEntry t (Just nm)
-        toEntry (FunDeclaration t sc nm fs) = Left "Fun declaration can't be a param type"
+        toEntry (Declaration t msc nm ml) = pure $ ParamEntry t (Just nm)
+        toEntry (FunDeclaration t sc nm fs) = barf "Fun declaration can't be a param type"
         toEntry (TypedefDeclaration _ _) = undefined
 
 expandDD :: Type -> (Maybe StorageClass) -> AST.DirectDeclarator -> Translate Declaration
-expandDD ty sc (AST.DDIdentifier nm)          = Right $ Declaration ty sc nm Nothing
+expandDD ty sc (AST.DDIdentifier nm)          = do
+    sym <- defVar nm
+    pure $ Declaration ty sc sym Nothing
 expandDD ty sc (AST.DDNested d)               = applyDeclarator ty sc d
 
 -- FIXME: apply the qualifiers
@@ -425,7 +501,7 @@ expandDD ty sc (AST.DDFun dd' params) = do
     ed <- applyDeclarator ty sc (AST.Declarator Nothing dd')
     case ed of
         (Declaration ty' sc' nm _) -> pure $ Declaration (Type (TyFunction (FunType ty' ps S.empty)) S.empty) sc' nm Nothing
-        (FunDeclaration _ _ _ _)   -> Left "Unexpected function declaration"
+        (FunDeclaration _ _ _ _)   -> barf "Unexpected function declaration"
         (TypedefDeclaration _ _) -> undefined
 expandDD ty sc (AST.DDFunPtr dd' nms)         = undefined
 
@@ -441,7 +517,7 @@ xDeclaration' ds declarator = do
     if isTypedef
         then case decl of
             (Declaration ty Nothing nm Nothing) -> pure $ TypedefDeclaration ty nm
-            _ -> Left "bad typedef"
+            _ -> barf "bad typedef"
         else pure decl
     where
         (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
@@ -457,8 +533,9 @@ xDeclaration AST.StaticAssert = pure []
 ---------------------------------------------------------------------
 -- Statement translation
 xStatement :: AST.Statement -> Translate Statement
-xStatement (AST.LabelStatement nm s) =
-    LabelStatement nm <$> xStatement s
+xStatement (AST.LabelStatement nm s) = do
+    sym <- defLabel nm
+    LabelStatement sym <$> xStatement s
 
 xStatement (AST.CaseStatement e Nothing s) =
     CaseStatement <$> xExpression e <*> (pure Nothing) <*> xStatement s
@@ -469,8 +546,9 @@ xStatement (AST.CaseStatement e (Just e2) s) =
 xStatement (AST.DefaultStatement s) =
     DefaultStatement <$> xStatement s
 
-xStatement (AST.CompoundStatement nm items) =
-    CompoundStatement nm . concat <$> mapM xBlockItem items
+xStatement (AST.CompoundStatement nms items) = do
+    syms <- mapM defVar nms
+    CompoundStatement syms . concat <$> mapM xBlockItem items
 
 xStatement (AST.ExpressionStatement e) =
     ExpressionStatement <$> xExpression e
@@ -498,8 +576,9 @@ xStatement (AST.ForStatement md me1 me2 me3 s) = do
     s' <- xStatement s
     pure $ ForStatement decls me1' me2' me3' s'
 
-xStatement (AST.GotoStatement nm) =
-    pure $ GotoStatement nm
+xStatement (AST.GotoStatement nm) = do
+    sym <- refLabel nm
+    pure $ GotoStatement sym
 
 xStatement (AST.ContinueStatement) =
     pure ContinueStatement
@@ -556,5 +635,7 @@ xParams ds = mapM singleDecl ds
             d' <- xDeclaration' specs d
             case d' of
                 (Declaration t _ nm Nothing) -> pure $ ParamEntry t (Just nm)
-                _ -> Left "bad parameter"
+                _ -> barf "bad parameter"
 
+toHir :: AST.TranslationUnit -> Either String TranslationUnit
+toHir ast = runTranslate $ xTranslationUnit ast
