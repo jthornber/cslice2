@@ -346,10 +346,7 @@ instance Pretty Exp where
         pretty e2,
         pretty ']' ]
 
-    pretty (FuncallExp e1 params) = hsep [
-        pretty '(',
-        pretty e1,
-        pretty ')'] <> encloseSep lbracket rbracket comma (map pretty params)
+    pretty (FuncallExp e1 params) = pretty e1 <> encloseSep lparen rparen (comma <> space) (map pretty params)
 
     pretty (StructElt e nm) = hsep [
         lbracket,
@@ -549,21 +546,21 @@ instance Pretty Statement where
 
     pretty (ExpressionStatement e) = withSemi $ pretty e
 
-    pretty (IfStatement e t Nothing) = withSemi $ vsep [
+    pretty (IfStatement e t Nothing) = vsep [
         hsep [pretty "if", parens $ pretty e],
         pretty t]
 
-    pretty (IfStatement e t (Just f)) = withSemi $ vsep [
+    pretty (IfStatement e t (Just f)) = vsep [
         hsep [pretty "if", parens $ pretty e],
         pretty t,
         pretty "else",
         pretty f]
 
-    pretty (SwitchStatement e s) = withSemi $ vsep [
+    pretty (SwitchStatement e s) = vsep [
         hsep [pretty "switch", parens $ pretty e],
         pretty s]
 
-    pretty (WhileStatement e s) = withSemi $ vsep [
+    pretty (WhileStatement e s) = vsep [
         hsep [pretty "while", parens $ pretty e],
         pretty s]
 

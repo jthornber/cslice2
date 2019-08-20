@@ -19,7 +19,7 @@ repl input = do
     let ast = parse input
     case ast of
         Left e -> error e
-        Right ast' -> case xTranslationUnit ast' of
+        Right ast' -> case toHir ast' of
             Left e -> error e
             Right hir -> renderString . format 80 . pretty $ hir
     where
@@ -148,4 +148,10 @@ spec = parallel $ do
 
     describe "Expression.Assignment" $ do
         it "can show a simple assignment" $ printSame $ inFn "x = 4;"
+
+    describe "Expression.Funcall" $ do
+        it "can make a no param, no return type call" $ printSame $ inFn "tick();"
+        it "can make a single param, no return call" $ printSame $ inFn "square(5);"
+        it "can make a two param, no return call" $ printSame $ inFn "compare(3, 4);"
+        it "can make a two param, with return call" $ printSame $ inFn "x = compare(4, 5);"
 
