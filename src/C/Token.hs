@@ -5,6 +5,7 @@ module C.Token (
     ) where
 
 import C.Identifier
+import C.Int
 
 data Token a =
     T_ASM a |
@@ -58,7 +59,7 @@ data Token a =
     T_THREAD_LOCAL a |
 
     T_IDENTIFIER String a |
-    T_INTEGER Integer String a |
+    T_INTEGER Integer Sign IntType a |
     T_CHAR_LIT String a |
     T_STRING String a |
     T_TYPEDEF_NAME String a |
@@ -165,7 +166,7 @@ getAttr (T_NORETURN x) = x
 getAttr (T_STATIC_ASSERT x) = x
 getAttr (T_THREAD_LOCAL x) = x
 getAttr (T_IDENTIFIER _ x) = x
-getAttr (T_INTEGER _ _ x) = x
+getAttr (T_INTEGER _ _ _ x) = x
 getAttr (T_STRING _ x) = x
 getAttr (T_ARROW x) = x
 getAttr (T_ASSIGN x) = x

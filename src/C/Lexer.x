@@ -11,6 +11,7 @@ module C.Lexer (
     ) where
 
 import C.Token
+import C.Int
 
 import Debug.Trace
 import Data.List
@@ -189,12 +190,22 @@ charPosMany ((b, e, offset):rs) c = case charPos b e c of
     Nothing -> charPosMany rs c
 
 intToken :: (String -> Integer) -> String -> AlexPosn -> Token AlexPosn
-intToken fn s p = T_INTEGER (fn ns) suffix p
+intToken fn s p = T_INTEGER (fn ns) (sign suffix) (intType suffix) p
     where
         (suffix', ns') = span suffixChar . reverse $ s
         suffix = reverse suffix'
         ns = reverse ns'
         suffixChar c = c == 'u' || c == 'U' || c == 'l' || c == 'L'
+        sign cs = 
+            if elem 'u' cs || elem 'U' cs
+            then UNSIGNED
+            else SIGNED
+        intType cs = case (length $ filter isLong cs) of
+            0 -> INT
+            1 -> LONG
+            2 -> LONG_LONG
+            _ -> error "how many longs?"
+        isLong c = c == 'l' || c == 'L'
 
 readOct, readDec, readHex :: String -> Integer
 readOct = foldl' (\acc n -> acc * 8 + fromChar n) 0

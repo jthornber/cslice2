@@ -41,6 +41,7 @@ module C.AST (
     ) where
 
 import C.Identifier
+import C.Int
 
 data AssignOp =
     ASSIGN |
@@ -96,7 +97,7 @@ data Attr = Attr
 
 data Exp =
     VarExp Identifier |
-    IntConstExp Integer |
+    IntConstExp Sign IntType Integer |
     StringConstExp String |
     CharConstExp String |
     CompoundLiteral TypeName [InitializerPair] |

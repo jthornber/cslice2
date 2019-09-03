@@ -5,9 +5,11 @@ module C.Translate (
 import qualified C.AST as AST
 import C.HIR
 import C.Identifier
+import C.Int
 import C.Lexer
 import C.Parser
 import C.SymbolTable (SymbolTable, Symbol)
+import C.TypeCheck
 import qualified C.SymbolTable as ST
 
 import Control.Monad
@@ -65,6 +67,9 @@ refLabel = mkRef ST.refLabel
 refVar = mkRef ST.refVar
 refTypedef = mkRef ST.refTypedef
 
+typeVar :: Identifier -> Translate Type
+typeVar = undefined
+
 concatMapM fn xs = do
     xs' <- mapM fn xs
     pure $ concat xs'
@@ -114,9 +119,10 @@ xUnOp AST.POST_DEC = pure POST_DEC
 
 binAssign :: BinOp -> AST.Exp -> AST.Exp -> Translate Exp
 binAssign op e1 e2 = do
-    e1' <- xExpression e1
-    e2' <- xExpression e2
-    pure $ AssignExp e1' (BinaryExp op e1' e2')
+    e1'@(Exp t1 _) <- xExpression e1
+    e2'@(Exp t2 _) <- xExpression e2
+    let t3 = usualArithmeticConversion t1 t2
+    pure $ Exp t1 (AssignExp e1' (Exp t3 (BinaryExp op e1' e2')))
 
 xTypeName :: AST.TypeName -> Translate Type
 xTypeName (AST.TypeName specs Nothing) = do
@@ -156,40 +162,58 @@ applyDirectAbstractDeclarator (AST.DAFun (Just _) params) ty = do
     pure $ Type (TyFunction (FunType ty params' S.empty)) S.empty
 
 xExpression :: AST.Exp -> Translate Exp
-xExpression (AST.VarExp i) =
-    VarExp <$> refVar i
+xExpression (AST.VarExp i) = do
+    t <- typeVar i
+    Exp t . VarExp <$> refVar i
 
-xExpression (AST.IntConstExp n) =
-    pure $ LiteralExp $ IntValue n
+xExpression (AST.IntConstExp s ty n) = do
+    pure . Exp (Type (TyInt s ty) S.empty) . LiteralExp . IntValue $ n
 
 xExpression (AST.StringConstExp str) =
-    pure $ LiteralExp $ StringValue str
+    pure . Exp constCharStar . LiteralExp . StringValue $ str
+    where
+        -- FIXME: write some combinators to make writing types out easier
+        constCharStar = Type (TyPointer (Type (TyInt SIGNED CHAR) (S.fromList [CONST]))) S.empty
 
 xExpression (AST.CharConstExp c) =
-    pure $ LiteralExp $ CharValue (head c)
+    pure . Exp constChar . LiteralExp . CharValue . head $ c
+    where
+        constChar = Type (TyInt SIGNED CHAR) (S.fromList [CONST])
 
 xExpression (AST.CompoundLiteral tn inits) = do
     ty <- xTypeName tn
     fields <- mapM xInitializerPair inits
-    pure $ LiteralExp (CompoundValue ty fields)
+    pure . Exp ty $ LiteralExp (CompoundValue ty fields)
 
-xExpression (AST.SubscriptExp e1 e2) =
-    SubscriptExp <$> xExpression e1 <*> xExpression e2
+xExpression (AST.SubscriptExp e1 e2) = do
+    e1'@(Exp t _) <- xExpression e1
+    e2' <- xExpression e2
+    pure . Exp (arrayEltType t) $ SubscriptExp e1' e2'
 
-xExpression (AST.FuncallExp e params) =
-    FuncallExp <$> xExpression e <*> mapM xExpression params
+xExpression (AST.FuncallExp e params) = do
+    fun@(Exp t _) <- xExpression e
+    params' <- mapM xExpression params
+    pure . Exp (returnType t) $ FuncallExp fun params'
 
-xExpression (AST.StructElt e n) =
-    StructElt <$> xExpression e <*> refVar n
+xExpression (AST.StructElt e n) = do
+    e'@(Exp t _) <- xExpression e
+    sym <- refVar n
+    pure . Exp (structEltType t sym) $ StructElt e' sym
 
-xExpression (AST.StructDeref e n) =
-    StructDeref <$> xExpression e <*> refVar n
+xExpression (AST.StructDeref e n) = do
+    e'@(Exp t _) <- xExpression e
+    sym <- refVar n
+    pure . Exp (structEltType (deref t) sym) $ StructDeref e' sym
 
-xExpression (AST.CommaExp e1 e2) =
-    CommaExp <$> xExpression e1 <*> xExpression e2
+xExpression (AST.CommaExp e1 e2) = do
+    e1' <- xExpression e1
+    e2'@(Exp t _) <- xExpression e2
+    pure . Exp t $ CommaExp e1' e2'
 
-xExpression (AST.AssignExp AST.ASSIGN e1 e2) =
-    AssignExp <$> xExpression e1 <*> xExpression e2
+xExpression (AST.AssignExp AST.ASSIGN e1 e2) = do
+    e1'@(Exp t _) <- xExpression e1
+    e2' <- xExpression e2
+    pure . Exp t $ AssignExp e1' e2'
 
 xExpression (AST.AssignExp AST.MULT_ASSIGN e1 e2) =
     binAssign MULT e1 e2
@@ -221,41 +245,62 @@ xExpression (AST.AssignExp AST.XOR_ASSIGN e1 e2) =
 xExpression (AST.AssignExp AST.OR_ASSIGN e1 e2) =
     binAssign BIT_OR e1 e2
 
-xExpression (AST.ConditionalExp e1 e2 e3) =
-    ConditionalExp <$> xExpression e1 <*> xExpression e2 <*> xExpression e3
+xExpression (AST.ConditionalExp e1 e2 e3) = do
+    e1' <- xExpression e1
+    e2'@(Exp t _) <- xExpression e2
+    e3' <- xExpression e3
+    pure . Exp t $ ConditionalExp e1' e2' e3'
 
-xExpression (AST.BinaryExp op e1 e2) =
-    BinaryExp <$> xBinOp op <*> xExpression e1 <*> xExpression e2
+xExpression (AST.BinaryExp op e1 e2) = do
+    e1'@(Exp t1 _) <- xExpression e1
+    e2'@(Exp t2 _) <- xExpression e2
+    op' <- xBinOp op
+    pure . Exp (usualArithmeticConversion t1 t2) $ BinaryExp op' e1' e2'
 
-xExpression (AST.UnaryExp op e1) =
-    UnaryExp <$> xUnOp op <*> xExpression e1
+xExpression (AST.UnaryExp op e1) = do
+    e1'@(Exp t _) <- xExpression e1
+    op' <- xUnOp op
+    pure . Exp t $ UnaryExp op' e1'
 
-xExpression (AST.CastExp tn e) =
-    CastExp <$> xTypeName tn <*> xExpression e
+xExpression (AST.CastExp tn e) = do
+    t <- xTypeName tn
+    e' <- xExpression e
+    pure . Exp t $ CastExp t e'
 
 xExpression (AST.SizeofValueExp e) =
-    SizeofValueExp <$> xExpression e
+    Exp unsigned_long . SizeofValueExp <$> xExpression e
+    where
+        unsigned_long = Type (TyInt UNSIGNED LONG) S.empty
 
 xExpression (AST.SizeofTypeExp tn) =
-    SizeofTypeExp <$> xTypeName tn
+    Exp unsigned_long . SizeofTypeExp <$> xTypeName tn
+    where
+        unsigned_long = Type (TyInt UNSIGNED LONG) S.empty
 
 xExpression (AST.AlignofExp tn) =
-    AlignofExp <$> xTypeName tn
+    Exp unsigned . AlignofExp <$> xTypeName tn
+    where
+        unsigned = Type (TyInt UNSIGNED INT) S.empty
 
-xExpression (AST.BlockExp nms items) =
-    BlockExp <$> mapM refVar nms <*> concatMapM xBlockItem items
+xExpression (AST.BlockExp nms items) = do
+    nms' <- mapM refVar nms
+    items' <- concatMapM xBlockItem items
+    -- FIXME: how do we ensure the last block item is anexpression with a type
+    pure . Exp void $ BlockExp nms' items'
+    where
+        void = Type TyVoid S.empty
 
 xExpression (AST.BuiltinVaArg) =
-    pure BuiltinVaArg
+    pure $ Exp (Type TyVoid S.empty) BuiltinVaArg
 
 xExpression (AST.BuiltinOffsetOf) =
-    pure BuiltinOffsetOf
+    pure $ Exp (Type TyVoid S.empty) BuiltinOffsetOf
 
 xExpression (AST.BuiltinTypesCompatible) =
-    pure BuiltinTypesCompatible
+    pure $ Exp (Type TyVoid S.empty) BuiltinTypesCompatible
 
 xExpression (AST.BuiltinConvertVector) =
-    pure BuiltinConvertVector
+    pure $ Exp (Type TyVoid S.empty) BuiltinConvertVector
 
 xInitializerPair :: AST.InitializerPair -> Translate InitializerPair
 xInitializerPair (AST.InitializerPair Nothing i) = InitializerPair Nothing <$> xInitializer i

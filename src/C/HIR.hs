@@ -1,5 +1,4 @@
 module C.HIR (
-    IntType(..),
     EnumEntry(..),
     StructEntry(..),
     StructType(..),
@@ -7,11 +6,11 @@ module C.HIR (
     RawType(..),
     FunFlag(..),
     FunType(..),
-    Sign(..),
     CVR(..),
     Type(..),
     BinOp(..),
     UnaryOp(..),
+    RawExp(..),
     Exp(..),
     Declaration(..),
     Literal(..),
@@ -27,6 +26,7 @@ module C.HIR (
     ) where
 
 import C.Identifier
+import C.Int
 import C.SymbolTable
 
 import Data.List (intercalate)
@@ -109,23 +109,6 @@ printRawType (TyAlias alias) nm = pretty alias <> nm
 printRawType (TyTypeofExp e) nm = pretty "typeof(" <> pretty e <> pretty ")" <> nm
 printRawType (TyTypeofType t) nm = pretty "typeof(" <> printType t emptyDoc <> pretty ")" <> nm
 
-data IntType =
-    CHAR |
-    SHORT |
-    INT |
-    INT128 |
-    LONG |
-    LONG_LONG
-    deriving (Eq, Show)
-
-instance Pretty IntType where
-    pretty CHAR = pretty "char"
-    pretty SHORT = pretty "short"
-    pretty INT = pretty "int"
-    pretty INT128 = pretty "__int128"
-    pretty LONG = pretty "long"
-    pretty LONG_LONG = pretty "long long"
-
 data EnumEntry = EnumEntry Symbol (Maybe Exp)
     deriving (Eq, Show)
 
@@ -192,15 +175,6 @@ data StructType =
 instance Pretty StructType where
     pretty Struct = pretty "struct"
     pretty Union = pretty "union"
-
-data Sign =
-    SIGNED |
-    UNSIGNED
-    deriving (Eq, Show)
-
-instance Pretty Sign where
-    pretty SIGNED = emptyDoc -- signed is always optional
-    pretty UNSIGNED = pretty "unsigned "
 
 data RawType =
     -- Basic types
@@ -311,7 +285,7 @@ instance Pretty UnaryOp where
     pretty PRE_DEC = pretty "--"
     pretty POST_DEC = pretty "--"
 
-data Exp =
+data RawExp =
     VarExp Symbol |
     LiteralExp Value |
     SubscriptExp Exp Exp |
@@ -324,6 +298,7 @@ data Exp =
     BinaryExp BinOp Exp Exp |
     UnaryExp UnaryOp Exp |
     CastExp Type Exp |
+    ImplicitCastExp Type Exp |
     SizeofValueExp Exp |
     SizeofTypeExp Type |
     AlignofExp Type |
@@ -334,7 +309,7 @@ data Exp =
     BuiltinConvertVector
     deriving (Eq, Show)
 
-instance Pretty Exp where
+instance Pretty RawExp where
     pretty (VarExp nm) = pretty nm
     pretty (LiteralExp v) = pretty v
 
@@ -382,6 +357,8 @@ instance Pretty Exp where
         parens $ printType t emptyDoc,
         parens $ pretty e]
 
+    pretty (ImplicitCastExp _ e) = pretty e
+
     pretty (SizeofValueExp e) = hsep [
         pretty "sizeof",
         parens $ pretty e]
@@ -402,6 +379,12 @@ instance Pretty Exp where
     pretty (BuiltinOffsetOf) = pretty "__builtinoffsetof"
     pretty (BuiltinTypesCompatible) = pretty "__builtintypescompatible"
     pretty (BuiltinConvertVector) = pretty "__builtinconvertvector"
+
+data Exp = Exp Type RawExp
+    deriving (Eq, Show)
+
+instance Pretty Exp where
+    pretty (Exp _ e) = pretty e
 
 data Declaration =
     Declaration Type (Maybe StorageClass) Symbol (Maybe Literal) |

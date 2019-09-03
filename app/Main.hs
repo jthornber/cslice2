@@ -18,8 +18,8 @@ main = do
     case ast of
         Left e -> error e
         Right ast' -> do
-            print ast'
-            putStrLn "\n"
+            -- print ast'
+            -- putStrLn "\n"
             case toHir ast' of
                 Left e -> error e
                 Right hir -> do

@@ -97,7 +97,7 @@ import Debug.Trace
 '__builtin_convert_vector'	{T_BUILTIN_CONVERT_VECTOR _}
 
 identifier_	{T_IDENTIFIER _ _}
-integer_const	{T_INTEGER $$ _ _}
+integer_const	{T_INTEGER _ _ _ _}
 string_const_	{T_STRING _ _}
 char_const	{T_CHAR_LIT _ _}
 typedef_name_    {T_TYPEDEF_NAME _ _}
@@ -186,7 +186,10 @@ field_specifier :: {Reversed Identifier}
 
 primary_exp :: {Exp}
     : identifier		{VarExp $1}
-    | integer_const		{IntConstExp $1}
+    | integer_const		{
+        case $1 of
+            (T_INTEGER n s ty _) -> IntConstExp s ty n
+    }
     | string_const		{StringConstExp $1}
     | char_const		{CharConstExp $ unwrapChar $1}
     | '(' expression ')'	{$2}
