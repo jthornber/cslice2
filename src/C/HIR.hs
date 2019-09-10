@@ -49,9 +49,6 @@ addName :: Doc ann -> Maybe Symbol -> Doc ann
 addName d Nothing = d
 addName d (Just nm) = d <> space <> pretty nm
 
-instance Pretty Symbol where
-    pretty (Symbol nm _ _) = pretty nm
-
 -- Includes trailing space if non-empty result
 printCVR :: Set CVR -> Doc ann
 printCVR cvr = case S.toList cvr of

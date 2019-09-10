@@ -42,8 +42,12 @@ mkDef fn nm = do
     put $ TranslateState st'
     pure sym
 
-mkRef :: (Identifier -> SymbolTable -> Symbol) -> Identifier -> Translate Symbol
-mkRef fn nm = gets $ fn nm . tsSymbolTable
+mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) -> Identifier -> Translate Symbol
+mkRef fn nm = do
+    s <- tsSymbolTable <$> get
+    case fn nm s of
+        Nothing -> barf ("couldn't find reference: " ++ show nm)
+        (Just v) -> pure v
 
 defFun, defStruct, defStructElt, defEnum, defEnumElt, defLabel, defVar, defTypedef
     :: Identifier -> Translate Symbol
