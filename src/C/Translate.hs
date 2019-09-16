@@ -1,17 +1,19 @@
-module C.Translate (
-    toHir
-    ) where
+{-# LANGUAGE TemplateHaskell #-}
 
+module C.Translate (
+            toHir
+    ) where
 import qualified C.AST as AST
 import C.HIR
 import C.Identifier
 import C.Int
 import C.Lexer
 import C.Parser
-import C.SymbolTable (SymbolTable, Symbol)
+import C.SymbolTable (SymbolTable, UUID, Symbol, Scope)
 import C.TypeCheck
 import qualified C.SymbolTable as ST
 
+import Control.Lens hiding (element)
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.State.Lazy
@@ -22,8 +24,11 @@ import qualified Data.Set as S
 ---------------------------------------------------------------------
 -- Monad
 data TranslateState = TranslateState {
-    tsSymbolTable :: SymbolTable
+    _tsSymbolTable :: SymbolTable,
+    _tsUIDCount :: Int
 }
+
+makeLenses ''TranslateState
 
 data TranslateError = TranslateError String
     deriving (Show)
@@ -31,45 +36,106 @@ data TranslateError = TranslateError String
 type Translate = ExceptT TranslateError (State TranslateState)
 
 runTranslate :: Translate a -> Either String a
-runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty) of
+runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty 0) of
     (Left (TranslateError msg)) -> Left msg
     (Right x') -> Right x'
 
-mkDef :: (Identifier -> SymbolTable -> (SymbolTable, Symbol)) -> Identifier -> Translate Symbol
-mkDef fn nm = do
-    (TranslateState st) <- get
-    let (st', sym) = fn nm st
-    put $ TranslateState st'
-    pure sym
-
-mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) -> Identifier -> Translate Symbol
+----------------------------------
+-- Lookup entries in symbol table
+mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) ->
+         Identifier -> Translate Symbol
 mkRef fn nm = do
-    s <- tsSymbolTable <$> get
+    s <- view tsSymbolTable <$> get
     case fn nm s of
         Nothing -> barf ("couldn't find reference: " ++ show nm)
+        (Just sym) -> pure sym
+
+refFun :: Identifier -> Translate Symbol
+refFun = mkRef ST.refFun
+
+refStruct :: Identifier -> Translate Symbol
+refStruct = mkRef ST.refStruct
+
+refStructElt :: Identifier -> Translate Symbol
+refStructElt = mkRef ST.refStructElt
+
+refEnum :: Identifier -> Translate Symbol
+refEnum = mkRef ST.refEnum
+
+refEnumElt :: Identifier -> Translate Symbol
+refEnumElt = mkRef ST.refVar
+
+refLabel :: Identifier -> Translate Symbol
+refLabel nm = do
+    (TranslateState st _) <- get
+    case ST.refLabel nm st of
+        Nothing -> barf ("couldn't find label: " ++ show nm)
         (Just v) -> pure v
 
-defFun, defStruct, defStructElt, defEnum, defEnumElt, defLabel, defVar, defTypedef
-    :: Identifier -> Translate Symbol
-defFun = mkDef ST.defFun
-defStruct = mkDef ST.defStruct
-defStructElt = mkDef ST.defStructElt
-defEnum = mkDef ST.defEnum
-defEnumElt = mkDef ST.defEnumElt
-defLabel = mkDef ST.defLabel
-defVar = mkDef ST.defVar
-defTypedef = mkDef ST.defTypedef
-
-refFun, refStruct, refStructElt, refEnum, refEnumElt, refLabel, refVar, refTypedef
-    :: Identifier -> Translate Symbol
-refFun = mkRef ST.refFun
-refStruct = mkRef ST.refStruct
-refStructElt = mkRef ST.refStructElt
-refEnum = mkRef ST.refEnum
-refEnumElt = mkRef ST.refEnumElt
-refLabel = mkRef ST.refLabel
+refVar :: Identifier -> Translate Symbol
 refVar = mkRef ST.refVar
+
+refTypedef :: Identifier -> Translate Symbol
 refTypedef = mkRef ST.refTypedef
+
+----------------------------------
+-- Define entries in symbol table
+
+mkDef :: (UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)) ->
+         Identifier -> Translate Symbol
+mkDef fn nm = do
+    (TranslateState st uuid) <- get
+    case fn uuid nm st of
+        Just (st', sym) -> do
+            put $ TranslateState st' (uuid + 1)
+            pure sym
+        Nothing -> barf $ "identifier already present in this scope: " ++ show nm
+
+defFun :: Identifier -> Translate Symbol
+defFun nm = mkDef ST.defFun nm
+
+defStruct :: Identifier -> Translate Symbol
+defStruct nm = mkDef ST.defStruct nm
+
+defEnum :: Identifier -> Translate Symbol
+defEnum nm = mkDef ST.defEnum nm
+
+defLabel :: Identifier -> Translate Symbol
+defLabel nm = do
+    (TranslateState st uuid) <- get
+    case ST.defLabel uuid nm st of
+        Just (st', sym) -> do
+            put $ TranslateState st' (uuid + 1)
+            pure sym
+        Nothing -> barf $ "multiply defined label"
+
+defVar :: Identifier -> Translate Symbol
+defVar nm = mkDef ST.defVar nm
+
+defTypedef :: Identifier -> Translate Symbol
+defTypedef nm = mkDef ST.defTypedef nm
+
+----------------------------------
+-- Push and pop frames in the symbol table
+
+pushScope :: Scope -> Translate ()
+pushScope sc = do
+    (TranslateState st uuid) <- get
+    put $ TranslateState (ST.enterScope sc st) uuid
+
+popScope :: Translate ()
+popScope = do
+    (TranslateState st uuid) <- get
+    case ST.leaveScope st of
+        Nothing -> internalError "no scope to leave"
+        (Just st') -> put $ TranslateState st' uuid
+
+withScope :: Scope -> Translate a -> Translate a
+withScope sc m = do
+    pushScope sc
+    r <- m
+    popScope
+    pure r
 
 typeVar :: Identifier -> Translate Type
 typeVar = undefined
@@ -84,6 +150,9 @@ maybeT fn (Just x) = Just <$> fn x
 
 barf :: String -> Translate a
 barf txt = throwError (TranslateError txt)
+
+internalError :: String -> Translate a
+internalError txt = barf $ "internal error: " ++ txt
 
 ---------------------------------------------------------------------
 -- Expression translation
@@ -288,8 +357,8 @@ xExpression (AST.AlignofExp tn) =
 
 xExpression (AST.BlockExp nms items) = do
     nms' <- mapM refVar nms
-    items' <- concatMapM xBlockItem items
-    -- FIXME: how do we ensure the last block item is anexpression with a type
+    items' <- withScope ST.ScopeBlock $ concatMapM xBlockItem items
+    -- FIXME: how do we ensure the last block item is an expression with a type
     pure . Exp void $ BlockExp nms' items'
     where
         void = Type TyVoid S.empty
@@ -452,7 +521,7 @@ xTypeSpecifier specs = case specs of
 
 xEnumEntry :: AST.Enumerator -> Translate EnumEntry
 xEnumEntry (AST.Enumerator nm me) = do
-    sym <- defEnumElt nm
+    sym <- defVar nm
     me' <- mapM xExpression me
     pure $ EnumEntry sym me'
 
@@ -597,7 +666,8 @@ xStatement (AST.DefaultStatement s) =
 
 xStatement (AST.CompoundStatement nms items) = do
     syms <- mapM defVar nms
-    CompoundStatement syms . concat <$> mapM xBlockItem items
+    withScope ST.ScopeBlock $ CompoundStatement syms . concat <$> mapM xBlockItem items
+
 
 xStatement (AST.ExpressionStatement e) =
     ExpressionStatement <$> xExpression e
@@ -667,7 +737,7 @@ xExternalDeclaration (AST.FunDef specs d decls s) = do
     case d' of
         (Declaration t@(Type (TyFunction ft) _) _ nm  _) -> do
             params' <- xParams decls
-            s' <- xStatement s
+            s' <- withScope ST.ScopeFunction $ xStatement s
             pure [FunDef ft nm s'] -- FIXME: missing cvr
         x -> pure [ExternalDeclaration x]
     where

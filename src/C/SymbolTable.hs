@@ -1,14 +1,13 @@
+{-# LANGUAGE TemplateHaskell, RankNTypes #-}
 module C.SymbolTable (
-    NameSpace(..),
-    Scope(..),
+            Scope(..),
+    UUID(..),
     Symbol(..),
     SymbolTable(..),
     empty,
     defFun,
     defStruct,
-    defStructElt,
     defEnum,
-    defEnumElt,
     defLabel,
     defVar,
     defTypedef,
@@ -16,17 +15,18 @@ module C.SymbolTable (
     refStruct,
     refStructElt,
     refEnum,
-    refEnumElt,
     refLabel,
     refVar,
     refTypedef,
-    beginBlock,
-    endBlock
+    enterScope,
+    leaveScope
     ) where
 
 import C.Identifier
 
+import Control.Lens hiding (element)
 import Data.Map (Map)
+import Data.Maybe
 import qualified Data.Map as M
 
 import Data.Text.Prettyprint.Doc
@@ -37,80 +37,102 @@ import Data.Text.Prettyprint.Doc
 -- We need a way of denoting a scope in code, eg,
 -- [ScopeFunction "dm_btree_remove", ScopeBlock [1, 2, 1]]
 
--- Namespaces:
--- struct/union
--- enum
--- label
--- general
-
-data NameSpace =
-    NSStruct |
-    NSEnum |
-    NSLabel |
-    NSGeneral
-    deriving (Eq, Show)
-
 -- FIXME: these aren't all scopes
 -- FIXME: differentiate between the name of a struct, and a field of a struct/union/enum
 data Scope =
     ScopeGlobal |
     ScopeFile |
     ScopeParam |
-    ScopeFunction Symbol |
-    ScopeBlock Symbol [Int]
+    ScopeFunction |
+    ScopeBlock
     deriving (Eq, Show)
 
-data Symbol = Symbol Identifier NameSpace Scope
+type UUID = Int
+
+-- Each symbol has a unique int id
+data Symbol = Symbol UUID Identifier
     deriving (Eq, Show)
 
 instance Pretty Symbol where
-    pretty (Symbol nm _ _) = pretty nm
+    pretty (Symbol _ nm) = pretty nm
 
 data Frame = Frame {
-    fStructs :: Map Identifier Symbol,
-    fEnums :: Map Identifier Symbol,
-    fLabels :: Map Identifier Symbol,
-    fVars :: Map Identifier Symbol,
-    fTypedefs :: Map Identifier Symbol
+    _fScope :: Scope,
+    _fFuns :: Map Identifier Symbol,
+    _fStructs :: Map Identifier Symbol,
+    _fEnums :: Map Identifier Symbol,
+    _fEnumElts :: Map Identifier Symbol,
+    _fLabels :: Map Identifier Symbol,
+    _fVars :: Map Identifier Symbol,
+    _fTypedefs :: Map Identifier Symbol
 } deriving (Eq, Show)
+
+makeLenses ''Frame
 
 data SymbolTable = SymbolTable [Frame]
     deriving (Eq, Show)
 
 empty :: SymbolTable
-empty = SymbolTable []
+empty = SymbolTable
+    [Frame ScopeGlobal M.empty M.empty M.empty M.empty M.empty M.empty M.empty]
 
--------------------
--- FIXME: stubbed
--------------------
+defFun, defStruct, defEnum, defVar, defTypedef
+    :: UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)
 
-defFun, defStruct, defStructElt, defEnum, defEnumElt, defLabel, defVar, defTypedef
-    :: Identifier -> SymbolTable -> (SymbolTable, Symbol)
+defThing :: Lens' Frame (Map Identifier Symbol) -> UUID -> Identifier ->
+            SymbolTable -> Maybe (SymbolTable, Symbol)
+defThing lens uuid nm (SymbolTable (f:fs)) =
+    if M.member nm $ view lens f
+    then Nothing
+    else Just (st, Symbol uuid nm)
+    where
+        sym = Symbol uuid nm
+        st = SymbolTable ((over lens (M.insert nm sym) f):fs)
 
-defFun nm st = (st, Symbol nm NSGeneral ScopeGlobal)
-defStruct nm st = (st, Symbol nm NSStruct ScopeGlobal)
-defStructElt nm st = (st, Symbol nm NSStruct ScopeGlobal)
-defEnum nm st = (st, Symbol nm NSEnum ScopeGlobal)
-defEnumElt nm st = (st, Symbol nm NSEnum ScopeGlobal)
-defLabel nm st = (st, Symbol nm NSLabel ScopeGlobal)
-defVar nm st = (st, Symbol nm NSGeneral ScopeGlobal)
-defTypedef nm st = (st, Symbol nm NSGeneral ScopeGlobal)
+defFun = defThing fFuns
+defStruct = defThing fStructs
+defEnum = defThing fEnums
+defVar = defThing fVars
+defTypedef = defThing fTypedefs
 
-refFun, refStruct, refStructElt, refEnum, refLabel, refVar, refTypedef
-    :: Identifier -> SymbolTable -> Maybe Symbol
+defLabel :: UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)
+defLabel = undefined
 
-refFun nm st = Just $ Symbol nm NSGeneral ScopeGlobal
-refStruct nm st = Just $ Symbol nm NSGeneral ScopeGlobal
-refStructElt nm st = Just $ Symbol nm NSGeneral ScopeGlobal
-refEnum nm st = Just $ Symbol nm NSGeneral ScopeGlobal
-refEnumElt nm st = Just $ Symbol nm NSGeneral ScopeGlobal
-refLabel nm st = Just $ Symbol nm NSGeneral ScopeGlobal
-refVar nm st = Just $ Symbol nm NSGeneral ScopeGlobal
-refTypedef nm st = Just $ Symbol nm NSGeneral ScopeGlobal
+firstJust :: (a -> Maybe b) -> [a] -> Maybe b
+firstJust f = listToMaybe . mapMaybe f
 
-beginBlock :: SymbolTable -> SymbolTable
-beginBlock st = st
+-- refThing :: (SymbolTable -> Map Identifier Symbol) -> Identifier -> SymbolTable -> Maybe Symbol
+refThing fn nm (SymbolTable frames) = firstJust lookup frames
+    where
+        lookup :: Frame -> Maybe Symbol
+        lookup = M.lookup nm . view fn
 
-endBlock :: SymbolTable -> SymbolTable
-endBlock st = st
+refFun :: Identifier -> SymbolTable -> Maybe Symbol
+refFun = refThing fFuns
+
+refStruct :: Identifier -> SymbolTable -> Maybe Symbol
+refStruct = refThing fStructs
+
+refStructElt :: Identifier -> SymbolTable -> Maybe Symbol
+refStructElt nm st = Nothing
+
+refEnum :: Identifier -> SymbolTable -> Maybe Symbol
+refEnum = refThing fEnums
+
+refLabel :: Identifier -> SymbolTable -> Maybe Symbol
+refLabel = refThing fLabels
+
+refVar :: Identifier -> SymbolTable -> Maybe Symbol
+refVar = refThing fVars
+
+refTypedef :: Identifier -> SymbolTable -> Maybe Symbol
+refTypedef = refThing fTypedefs
+
+enterScope :: Scope -> SymbolTable -> SymbolTable
+enterScope sc (SymbolTable frames) = SymbolTable $
+    (Frame sc M.empty M.empty M.empty M.empty M.empty M.empty M.empty : frames)
+
+leaveScope :: SymbolTable -> Maybe SymbolTable
+leaveScope (SymbolTable []) = Nothing
+leaveScope (SymbolTable (f:fs)) = Just $ SymbolTable fs
 
