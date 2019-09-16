@@ -44,11 +44,11 @@ runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty 0) of
 -- Lookup entries in symbol table
 mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) -> String ->
          Identifier -> Translate Symbol
-mkRef fn scopeName nm = do
+mkRef fn namespace nm = do
     s <- view tsSymbolTable <$> get
     case fn nm s of
         Nothing -> barf $
-            "Couldn't find reference to '" ++ show nm ++ "' in " ++ scopeName ++ " scope"
+            "Couldn't find reference to '" ++ show nm ++ "' in " ++ namespace ++ " scope"
         (Just sym) -> pure sym
 
 refFun :: Identifier -> Translate Symbol
@@ -83,23 +83,23 @@ refTypedef = mkRef ST.refTypedef "typedef"
 -- Define entries in symbol table
 
 mkDef :: (UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)) ->
-         Identifier -> Translate Symbol
-mkDef fn nm = do
+         String -> Identifier -> Translate Symbol
+mkDef fn namespace nm = do
     (TranslateState st uuid) <- get
     case fn uuid nm st of
         Just (st', sym) -> do
             put $ TranslateState st' (uuid + 1)
             pure sym
-        Nothing -> barf $ "identifier already present in this scope: " ++ show nm
+        Nothing -> barf $ "identifier already present in " ++ namespace ++ " scope: " ++ show nm
 
 defFun :: Identifier -> Translate Symbol
-defFun nm = mkDef ST.defFun nm
+defFun = mkDef ST.defFun "function"
 
 defStruct :: Identifier -> Translate Symbol
-defStruct nm = mkDef ST.defStruct nm
+defStruct = mkDef ST.defStruct "struct"
 
 defEnum :: Identifier -> Translate Symbol
-defEnum nm = mkDef ST.defEnum nm
+defEnum = mkDef ST.defEnum "enum"
 
 defLabel :: Identifier -> Translate Symbol
 defLabel nm = do
@@ -111,7 +111,7 @@ defLabel nm = do
         Nothing -> barf $ "multiply defined label"
 
 defVar :: Identifier -> Translate Symbol
-defVar nm = mkDef ST.defVar nm
+defVar = mkDef ST.defVar "var"
 
 rmVar :: Identifier -> Translate ()
 rmVar nm = do
@@ -121,7 +121,7 @@ rmVar nm = do
         Nothing -> barf $ "asked to remove symbol that is not present: " ++ show nm
 
 defTypedef :: Identifier -> Translate Symbol
-defTypedef nm = mkDef ST.defTypedef nm
+defTypedef = mkDef ST.defTypedef "typedef"
 
 ----------------------------------
 -- Push and pop frames in the symbol table
