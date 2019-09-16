@@ -10,6 +10,7 @@ module C.SymbolTable (
     defEnum,
     defLabel,
     defVar,
+    rmVar,
     defTypedef,
     refFun,
     refStruct,
@@ -97,6 +98,15 @@ defTypedef = defThing fTypedefs
 
 defLabel :: UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)
 defLabel = undefined
+
+-- This is a hack to make the Translate module a bit easier to code
+rmVar :: Identifier -> SymbolTable -> Maybe SymbolTable
+rmVar nm (SymbolTable (f:fs)) =
+    if M.member nm $ view fVars f
+    then Just $ SymbolTable $ (over fVars (M.delete nm) f) : fs
+    else Nothing
+    where
+        vars = view fVars f
 
 firstJust :: (a -> Maybe b) -> [a] -> Maybe b
 firstJust f = listToMaybe . mapMaybe f

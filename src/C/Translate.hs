@@ -42,28 +42,29 @@ runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty 0) of
 
 ----------------------------------
 -- Lookup entries in symbol table
-mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) ->
+mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) -> String ->
          Identifier -> Translate Symbol
-mkRef fn nm = do
+mkRef fn scopeName nm = do
     s <- view tsSymbolTable <$> get
     case fn nm s of
-        Nothing -> barf ("couldn't find reference: " ++ show nm)
+        Nothing -> barf $
+            "Couldn't find reference to '" ++ show nm ++ "' in " ++ scopeName ++ " scope"
         (Just sym) -> pure sym
 
 refFun :: Identifier -> Translate Symbol
-refFun = mkRef ST.refFun
+refFun = mkRef ST.refFun "function"
 
 refStruct :: Identifier -> Translate Symbol
-refStruct = mkRef ST.refStruct
+refStruct = mkRef ST.refStruct "struct"
 
 refStructElt :: Identifier -> Translate Symbol
-refStructElt = mkRef ST.refStructElt
+refStructElt = mkRef ST.refStructElt "struct element"
 
 refEnum :: Identifier -> Translate Symbol
-refEnum = mkRef ST.refEnum
+refEnum = mkRef ST.refEnum "enum"
 
 refEnumElt :: Identifier -> Translate Symbol
-refEnumElt = mkRef ST.refVar
+refEnumElt = mkRef ST.refVar "var (enum elt)"
 
 refLabel :: Identifier -> Translate Symbol
 refLabel nm = do
@@ -73,10 +74,10 @@ refLabel nm = do
         (Just v) -> pure v
 
 refVar :: Identifier -> Translate Symbol
-refVar = mkRef ST.refVar
+refVar = mkRef ST.refVar "var"
 
 refTypedef :: Identifier -> Translate Symbol
-refTypedef = mkRef ST.refTypedef
+refTypedef = mkRef ST.refTypedef "typedef"
 
 ----------------------------------
 -- Define entries in symbol table
@@ -111,6 +112,13 @@ defLabel nm = do
 
 defVar :: Identifier -> Translate Symbol
 defVar nm = mkDef ST.defVar nm
+
+rmVar :: Identifier -> Translate ()
+rmVar nm = do
+    (TranslateState st uuid) <- get
+    case ST.rmVar nm st of
+        (Just st') -> put $ TranslateState st' uuid
+        Nothing -> barf $ "asked to remove symbol that is not present: " ++ show nm
 
 defTypedef :: Identifier -> Translate Symbol
 defTypedef nm = mkDef ST.defTypedef nm
@@ -600,10 +608,10 @@ convertParams (AST.ParameterTypeList pds vararg) = mapM expand pds
         toEntry (TypedefDeclaration _ _) = undefined
 
 expandDD :: Type -> (Maybe StorageClass) -> AST.DirectDeclarator -> Translate Declaration
-expandDD ty sc (AST.DDIdentifier nm)          = do
+expandDD ty sc (AST.DDIdentifier nm) = do
     sym <- defVar nm
     pure $ Declaration ty sc sym Nothing
-expandDD ty sc (AST.DDNested d)               = applyDeclarator ty sc d
+expandDD ty sc (AST.DDNested d) = applyDeclarator ty sc d
 
 -- FIXME: apply the qualifiers
 expandDD ty sc (AST.DDArray dd' tq Nothing _ _) =
@@ -634,7 +642,10 @@ xDeclaration' ds declarator = do
     decl <- applyDeclarator (Type rt cvr) sClass declarator
     if isTypedef
         then case decl of
-            (Declaration ty Nothing nm Nothing) -> pure $ TypedefDeclaration ty nm
+            (Declaration ty Nothing (ST.Symbol _ nm) Nothing) -> do
+                rmVar nm
+                sym <- defTypedef nm
+                pure $ TypedefDeclaration ty sym
             _ -> barf "bad typedef"
         else pure decl
     where
