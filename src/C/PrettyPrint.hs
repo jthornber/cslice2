@@ -61,20 +61,22 @@ printRawType (TyArray ty (Just size)) nm = hcat [
     pretty size,
     rbracket]
 
-printRawType (TyStruct st nm' mentries) nm = header <> body <+> nm
+printRawType (TyStruct st nm' entries) nm = header <> body <+> nm
     where
         header = pretty "struct" <+> pretty nm'
-        body = case mentries of
-            Nothing -> emptyDoc
-            (Just []) -> space <> braces emptyDoc
-            (Just entries) -> space <>
-                              lbrace <>
-                              line <>
-                              indent 8 (vsep $ map ((<> semi) . pretty) $ entries) <>
-                              line <>
-                              rbrace
+        body = case entries of
+            [] -> space <> braces emptyDoc
+            entries -> space <>
+                       lbrace <>
+                       line <>
+                       indent 8 (vsep $ map ((<> semi) . pretty) $ entries) <>
+                       line <>
+                       rbrace
 
-printRawType (TyPointer ty) nm = printType ty (pretty '*' <> nm)
+printRawType (TyStructRef st nm') nm = header <+> nm
+    where
+        header = pretty "struct" <+> pretty nm'
+
 printRawType (TyFunction ft) nm = prettyFun ft nm
 
 printRawType (TyAlias alias) nm = pretty alias <> nm

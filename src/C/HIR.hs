@@ -72,7 +72,8 @@ data RawType =
 
     -- Derived types
     TyArray Type (Maybe Exp) |
-    TyStruct StructType Symbol (Maybe [StructEntry]) |
+    TyStruct StructType Symbol [StructEntry] |
+    TyStructRef StructType Symbol |
     TyPointer Type |
 
     TyFunction FunType |

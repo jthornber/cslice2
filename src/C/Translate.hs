@@ -68,9 +68,6 @@ refFun = mkRef ST.refFun "function"
 refStruct :: Identifier -> Translate Symbol
 refStruct = mkRef ST.refStruct "struct"
 
--- refStructElt :: Identifier -> Translate Symbol
--- refStructElt = mkRef ST.refStructElt "struct element"
-
 refEnum :: Identifier -> Translate Symbol
 refEnum = mkRef ST.refEnum "enum"
 
@@ -89,6 +86,14 @@ refVar = mkRef ST.refVar "var"
 
 refTypedef :: Identifier -> Translate Symbol
 refTypedef = mkRef ST.refTypedef "typedef"
+
+{-
+-- FIXME:
+refStructElt :: Type -> Identifier -> Translate Symbol
+refStructElt (Type (TyStruct _ _ Nothing) _) = barf "struct type lacks field info"
+-}
+
+refStructElt = undefined
 
 ----------------------------------
 -- Define entries in symbol table
@@ -291,7 +296,7 @@ xExpression (AST.FuncallExp e params) = do
 
 xExpression (AST.StructElt e n) = do
     e'@(Exp t _) <- xExpression e
-    sym <- refVar n -- refStructElt t n
+    sym <- refStructElt t n
     pure . Exp (structEltType t sym) $ StructElt e' sym
 
 xExpression (AST.StructDeref e n) = do
@@ -508,15 +513,15 @@ xTypeSpecifier specs = case specs of
             case mnm of
                 Nothing -> do
                     sym <- anonSym
-                    pure $ TyStruct (xStructType st) sym Nothing
+                    pure $ TyStructRef (xStructType st) sym
                 (Just nm) -> do
                     sym <- defStruct nm
-                    pure $ TyStruct (xStructType st) sym Nothing
+                    pure $ TyStructRef (xStructType st) sym
 
         getTS (AST.StructOrUnionSpecifier st mnm (Just fields)) = do
             entries <- mapM xStructEntry fields
             sym <- maybe anonSym defStruct mnm
-            pure $ TyStruct (xStructType st) sym (Just . concat $ entries)
+            pure $ TyStruct (xStructType st) sym (concat entries)
 
         getTS (AST.EnumDefSpecifier mnm entries) = do
             entries' <- mapM xEnumEntry entries

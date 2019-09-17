@@ -29,14 +29,14 @@ arrayEltType (Type (TyPointer ty) _) = ty
 arrayEltType _ = typeError "not an array type"
 
 structEltType :: Type -> Symbol -> Type
-structEltType (Type (TyStruct _ _ Nothing) _) sym = typeError "Not a struct"
-structEltType (Type (TyStruct _ _ (Just fields)) _) sym = case find fields of
+structEltType (Type (TyStruct _ _ fields) _) sym = case find fields of
     Nothing -> typeError "No such field"
     (Just t) -> t
     where
         find [] = Nothing
         find ((StructEntry t (Just sym') _):xs) | sym == sym' = Just t
         find (_:xs) = find xs
+structEltType (Type (TyStructRef _ _) _) sym = typeError "Not a struct"
 structEltType _ sym = typeError "not a struct"
 
 returnType :: Type -> Type
