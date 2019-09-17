@@ -18,6 +18,8 @@ import Control.Monad
 import Control.Monad.Except
 import Control.Monad.State.Lazy
 
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as M
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -25,7 +27,8 @@ import qualified Data.Set as S
 -- Monad
 data TranslateState = TranslateState {
     _tsSymbolTable :: SymbolTable,
-    _tsUIDCount :: Int
+    _tsUIDCount :: Int,
+    _tsStructDetails :: Map Symbol [StructEntry]
 }
 
 makeLenses ''TranslateState
@@ -35,8 +38,11 @@ data TranslateError = TranslateError String
 
 type Translate = ExceptT TranslateError (State TranslateState)
 
+emptyTS :: TranslateState
+emptyTS = TranslateState ST.empty 0 M.empty
+
 runTranslate :: Translate a -> Either String a
-runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty 0) of
+runTranslate x = case evalState (runExceptT x) emptyTS of
     (Left (TranslateError msg)) -> Left msg
     (Right x') -> Right x'
 
@@ -45,9 +51,9 @@ runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty 0) of
 
 mkSym :: Identifier -> Translate Symbol
 mkSym nm = do
-    (TranslateState st uuid) <- get
-    let r = ST.Symbol uuid nm
-    put $ TranslateState st (uuid + 1)
+    ts <- get
+    let r = ST.Symbol (view tsUIDCount ts) nm
+    put $ over tsUIDCount (+ 1) ts
     pure r
 
 anonSym :: Translate Symbol
@@ -76,8 +82,8 @@ refEnumElt = mkRef ST.refVar "var (enum elt)"
 
 refLabel :: Identifier -> Translate Symbol
 refLabel nm = do
-    (TranslateState st _) <- get
-    case ST.refLabel nm st of
+    ts <- get
+    case ST.refLabel nm (view tsSymbolTable ts) of
         Nothing -> barf ("couldn't find label: " ++ show nm)
         (Just v) -> pure v
 
@@ -102,10 +108,10 @@ mkDef :: (Symbol -> SymbolTable -> Maybe SymbolTable) ->
          String -> Identifier -> Translate Symbol
 mkDef fn namespace nm = do
     sym <- mkSym nm
-    (TranslateState st uuid) <- get
-    case fn sym st of
+    ts <- get
+    case fn sym (view tsSymbolTable ts) of
         Just st' -> do
-            put $ TranslateState st' uuid
+            put $ over tsSymbolTable (const st') ts
             pure sym
         Nothing -> barf $ "identifier already present in " ++ namespace ++ " scope: " ++ show nm
 
@@ -121,10 +127,10 @@ defEnum = mkDef ST.defEnum "enum"
 defLabel :: Identifier -> Translate Symbol
 defLabel nm = do
     sym <- mkSym nm
-    (TranslateState st uuid) <- get
-    case ST.defLabel sym st of
+    ts <- get
+    case ST.defLabel sym (view tsSymbolTable ts) of
         Just st' -> do
-            put $ TranslateState st' uuid
+            put $ over tsSymbolTable (const st') ts
             pure sym
         Nothing -> barf $ "multiply defined label"
 
@@ -133,9 +139,9 @@ defVar = mkDef ST.defVar "var"
 
 rmVar :: Identifier -> Translate ()
 rmVar nm = do
-    (TranslateState st uuid) <- get
-    case ST.rmVar nm st of
-        (Just st') -> put $ TranslateState st' uuid
+    ts <- get
+    case ST.rmVar nm (view tsSymbolTable ts) of
+        (Just st') -> put $ over tsSymbolTable (const st') ts
         Nothing -> barf $ "asked to remove symbol that is not present: " ++ show nm
 
 defTypedef :: Identifier -> Translate Symbol
@@ -146,15 +152,15 @@ defTypedef = mkDef ST.defTypedef "typedef"
 
 pushScope :: Scope -> Translate ()
 pushScope sc = do
-    (TranslateState st uuid) <- get
-    put $ TranslateState (ST.enterScope sc st) uuid
+    ts <- get
+    put $ over tsSymbolTable (ST.enterScope sc) ts
 
 popScope :: Translate ()
 popScope = do
-    (TranslateState st uuid) <- get
-    case ST.leaveScope st of
+    ts <- get
+    case ST.leaveScope (view tsSymbolTable ts) of
         Nothing -> internalError "no scope to leave"
-        (Just st') -> put $ TranslateState st' uuid
+        (Just st') -> put $ over tsSymbolTable (const st') ts
 
 withScope :: Scope -> Translate a -> Translate a
 withScope sc m = do
