@@ -42,6 +42,17 @@ runTranslate x = case evalState (runExceptT x) (TranslateState ST.empty 0) of
 
 ----------------------------------
 -- Lookup entries in symbol table
+
+mkSym :: Identifier -> Translate Symbol
+mkSym nm = do
+    (TranslateState st uuid) <- get
+    let r = ST.Symbol uuid nm
+    put $ TranslateState st (uuid + 1)
+    pure r
+
+anonSym :: Translate Symbol
+anonSym = mkSym $ Identifier ""
+
 mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) -> String ->
          Identifier -> Translate Symbol
 mkRef fn namespace nm = do
@@ -57,8 +68,8 @@ refFun = mkRef ST.refFun "function"
 refStruct :: Identifier -> Translate Symbol
 refStruct = mkRef ST.refStruct "struct"
 
-refStructElt :: Identifier -> Translate Symbol
-refStructElt = mkRef ST.refStructElt "struct element"
+-- refStructElt :: Identifier -> Translate Symbol
+-- refStructElt = mkRef ST.refStructElt "struct element"
 
 refEnum :: Identifier -> Translate Symbol
 refEnum = mkRef ST.refEnum "enum"
@@ -82,13 +93,14 @@ refTypedef = mkRef ST.refTypedef "typedef"
 ----------------------------------
 -- Define entries in symbol table
 
-mkDef :: (UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)) ->
+mkDef :: (Symbol -> SymbolTable -> Maybe SymbolTable) ->
          String -> Identifier -> Translate Symbol
 mkDef fn namespace nm = do
+    sym <- mkSym nm
     (TranslateState st uuid) <- get
-    case fn uuid nm st of
-        Just (st', sym) -> do
-            put $ TranslateState st' (uuid + 1)
+    case fn sym st of
+        Just st' -> do
+            put $ TranslateState st' uuid
             pure sym
         Nothing -> barf $ "identifier already present in " ++ namespace ++ " scope: " ++ show nm
 
@@ -103,10 +115,11 @@ defEnum = mkDef ST.defEnum "enum"
 
 defLabel :: Identifier -> Translate Symbol
 defLabel nm = do
+    sym <- mkSym nm
     (TranslateState st uuid) <- get
-    case ST.defLabel uuid nm st of
-        Just (st', sym) -> do
-            put $ TranslateState st' (uuid + 1)
+    case ST.defLabel sym st of
+        Just st' -> do
+            put $ TranslateState st' uuid
             pure sym
         Nothing -> barf $ "multiply defined label"
 
@@ -278,7 +291,7 @@ xExpression (AST.FuncallExp e params) = do
 
 xExpression (AST.StructElt e n) = do
     e'@(Exp t _) <- xExpression e
-    sym <- refVar n
+    sym <- refVar n -- refStructElt t n
     pure . Exp (structEltType t sym) $ StructElt e' sym
 
 xExpression (AST.StructDeref e n) = do
@@ -493,15 +506,17 @@ xTypeSpecifier specs = case specs of
 
         getTS (AST.StructOrUnionSpecifier st mnm Nothing) = do
             case mnm of
-                Nothing -> pure $ TyStruct (xStructType st) Nothing Nothing
+                Nothing -> do
+                    sym <- anonSym
+                    pure $ TyStruct (xStructType st) sym Nothing
                 (Just nm) -> do
                     sym <- defStruct nm
-                    pure $ TyStruct (xStructType st) (Just sym) Nothing
+                    pure $ TyStruct (xStructType st) sym Nothing
 
         getTS (AST.StructOrUnionSpecifier st mnm (Just fields)) = do
             entries <- mapM xStructEntry fields
-            msym <- maybeT defStruct mnm
-            pure $ TyStruct (xStructType st) msym (Just . concat $ entries)
+            sym <- maybe anonSym defStruct mnm
+            pure $ TyStruct (xStructType st) sym (Just . concat $ entries)
 
         getTS (AST.EnumDefSpecifier mnm entries) = do
             entries' <- mapM xEnumEntry entries

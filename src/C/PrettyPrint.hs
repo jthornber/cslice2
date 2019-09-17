@@ -61,9 +61,9 @@ printRawType (TyArray ty (Just size)) nm = hcat [
     pretty size,
     rbracket]
 
-printRawType (TyStruct st mnm' mentries) nm = header <> body <+> nm
+printRawType (TyStruct st nm' mentries) nm = header <> body <+> nm
     where
-        header = pretty "struct" `addName` mnm'
+        header = pretty "struct" <+> pretty nm'
         body = case mentries of
             Nothing -> emptyDoc
             (Just []) -> space <> braces emptyDoc

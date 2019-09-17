@@ -14,7 +14,6 @@ module C.SymbolTable (
     defTypedef,
     refFun,
     refStruct,
-    refStructElt,
     refEnum,
     refLabel,
     refVar,
@@ -51,7 +50,8 @@ data Scope =
 type UUID = Int
 
 -- Each symbol has a unique int id
-data Symbol = Symbol UUID Identifier
+data Symbol =
+    Symbol UUID Identifier
     deriving (Eq, Show)
 
 instance Pretty Symbol where
@@ -78,17 +78,14 @@ empty = SymbolTable
     [Frame ScopeGlobal M.empty M.empty M.empty M.empty M.empty M.empty M.empty]
 
 defFun, defStruct, defEnum, defVar, defTypedef
-    :: UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)
+    :: Symbol -> SymbolTable -> Maybe SymbolTable
 
-defThing :: Lens' Frame (Map Identifier Symbol) -> UUID -> Identifier ->
-            SymbolTable -> Maybe (SymbolTable, Symbol)
-defThing lens uuid nm (SymbolTable (f:fs)) =
+defThing :: Lens' Frame (Map Identifier Symbol) -> Symbol ->
+            SymbolTable -> Maybe SymbolTable
+defThing lens sym@(Symbol _ nm) (SymbolTable (f:fs)) =
     if M.member nm $ view lens f
     then Nothing
-    else Just (st, Symbol uuid nm)
-    where
-        sym = Symbol uuid nm
-        st = SymbolTable ((over lens (M.insert nm sym) f):fs)
+    else Just . SymbolTable $ (over lens (M.insert nm sym) f) : fs
 
 defFun = defThing fFuns
 defStruct = defThing fStructs
@@ -96,7 +93,7 @@ defEnum = defThing fEnums
 defVar = defThing fVars
 defTypedef = defThing fTypedefs
 
-defLabel :: UUID -> Identifier -> SymbolTable -> Maybe (SymbolTable, Symbol)
+defLabel :: Symbol -> SymbolTable -> Maybe SymbolTable
 defLabel = undefined
 
 -- This is a hack to make the Translate module a bit easier to code
@@ -122,9 +119,6 @@ refFun = refThing fFuns
 
 refStruct :: Identifier -> SymbolTable -> Maybe Symbol
 refStruct = refThing fStructs
-
-refStructElt :: Identifier -> SymbolTable -> Maybe Symbol
-refStructElt nm st = Nothing
 
 refEnum :: Identifier -> SymbolTable -> Maybe Symbol
 refEnum = refThing fEnums
