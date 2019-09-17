@@ -9,7 +9,7 @@ import C.Identifier
 import C.Int
 import C.Lexer
 import C.Parser
-import C.SymbolTable (SymbolTable, UUID, Symbol, Scope)
+import C.SymbolTable (SymbolTable, UUID, Symbol(..), Scope)
 import C.TypeCheck
 import qualified C.SymbolTable as ST
 
@@ -20,6 +20,7 @@ import Control.Monad.State.Lazy
 
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -52,7 +53,7 @@ runTranslate x = case evalState (runExceptT x) emptyTS of
 mkSym :: Identifier -> Translate Symbol
 mkSym nm = do
     ts <- get
-    let r = ST.Symbol (view tsUIDCount ts) nm
+    let r = Symbol (view tsUIDCount ts) nm
     put $ over tsUIDCount (+ 1) ts
     pure r
 
@@ -96,13 +97,29 @@ refVar = mkRef ST.refVar "var"
 refTypedef :: Identifier -> Translate Symbol
 refTypedef = mkRef ST.refTypedef "typedef"
 
-{-
--- FIXME:
-refStructElt :: Type -> Identifier -> Translate Symbol
-refStructElt (Type (TyStruct _ _ Nothing) _) = barf "struct type lacks field info"
--}
+structName' :: RawType -> Translate Symbol
+structName' (TyStruct _ sym _) = pure sym
+structName' (TyStructRef _ sym) = pure sym
+structName' _ = barf "not a struct"
 
-refStructElt = undefined
+structField' :: [StructEntry] -> Identifier -> Maybe Symbol
+structField' fields nm = firstJust checkEntry fields
+    where
+        checkEntry (StructEntry _ (Just sym@(Symbol _ nm')) _) | nm == nm' = Just sym
+        checkEntry _ = Nothing
+
+        firstJust f = listToMaybe . mapMaybe f
+
+refStructElt :: Type -> Identifier -> Translate Symbol
+refStructElt (Type rt _) nm = do
+    ts <- get
+    sym <- structName' rt
+    let sd = view tsStructDetails ts
+    case M.lookup sym sd of
+        Nothing -> barf $ "struct isn't registered: " ++ show sym
+        (Just fields) -> case structField' fields nm of
+            Nothing -> barf $ "invalid struct field: " ++ show sym ++ "." ++ show nm
+            (Just sym') -> pure sym
 
 ----------------------------------
 -- Define entries in symbol table
@@ -685,7 +702,7 @@ xDeclaration' ds declarator = do
     decl <- applyDeclarator (Type rt cvr) sClass declarator
     if isTypedef
         then case decl of
-            (Declaration ty Nothing (ST.Symbol _ nm) Nothing) -> do
+            (Declaration ty Nothing (Symbol _ nm) Nothing) -> do
                 rmVar nm
                 sym <- defTypedef nm
                 pure $ TypedefDeclaration ty sym
