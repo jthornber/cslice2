@@ -52,7 +52,7 @@ type UUID = Int
 -- Each symbol has a unique int id
 data Symbol =
     Symbol UUID Identifier
-    deriving (Eq, Show)
+    deriving (Eq, Ord, Show)
 
 instance Pretty Symbol where
     pretty (Symbol _ nm) = pretty nm

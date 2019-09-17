@@ -74,6 +74,9 @@ refFun = mkRef ST.refFun "function"
 refStruct :: Identifier -> Translate Symbol
 refStruct = mkRef ST.refStruct "struct"
 
+mrefStruct :: Identifier -> Translate (Maybe Symbol)
+mrefStruct nm = ST.refStruct nm . view tsSymbolTable <$> get
+
 refEnum :: Identifier -> Translate Symbol
 refEnum = mkRef ST.refEnum "enum"
 
@@ -118,8 +121,20 @@ mkDef fn namespace nm = do
 defFun :: Identifier -> Translate Symbol
 defFun = mkDef ST.defFun "function"
 
-defStruct :: Identifier -> Translate Symbol
-defStruct = mkDef ST.defStruct "struct"
+defStruct' = mkDef ST.defStruct "struct"
+
+defStruct :: Maybe [StructEntry] -> Identifier -> Translate Symbol
+defStruct (Just fields) nm = do
+    msym <- mrefStruct nm
+    case msym of
+        Nothing -> do
+            sym <- defStruct' nm
+            modify $ over tsStructDetails (M.insert sym fields)
+            pure sym
+        Just sym -> do
+            modify $ over tsStructDetails (M.insert sym fields)
+            pure sym
+defStruct Nothing nm = defStruct' nm
 
 defEnum :: Identifier -> Translate Symbol
 defEnum = mkDef ST.defEnum "enum"
@@ -521,12 +536,12 @@ xTypeSpecifier specs = case specs of
                     sym <- anonSym
                     pure $ TyStructRef (xStructType st) sym
                 (Just nm) -> do
-                    sym <- defStruct nm
+                    sym <- defStruct Nothing nm
                     pure $ TyStructRef (xStructType st) sym
 
         getTS (AST.StructOrUnionSpecifier st mnm (Just fields)) = do
             entries <- mapM xStructEntry fields
-            sym <- maybe anonSym defStruct mnm
+            sym <- maybe anonSym (defStruct (Just $ concat entries)) mnm
             pure $ TyStruct (xStructType st) sym (concat entries)
 
         getTS (AST.EnumDefSpecifier mnm entries) = do
