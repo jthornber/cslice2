@@ -2,6 +2,7 @@ module Main where
 
 import C.Lexer
 import C.Parser
+import C.PrettyPrint
 import C.Translate
 
 import Control.Monad
@@ -25,7 +26,7 @@ main = do
                 Right hir -> do
                     print hir
                     putStrLn "\n"
-                    putDocW 80 $ pretty hir
+                    putDocW 80 $ ppTranslationUnit hir
                     putStrLn ""
     where
         parse s = runAlex s translation_unit
