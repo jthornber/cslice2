@@ -523,16 +523,18 @@ xTypeSpecifier specs = case specs of
             msym <- maybeT defEnum mnm
             pure $ TyEnum msym (Just entries')
 
-        getTS (AST.EnumRefSpecifier nm)  = do
+        getTS (AST.EnumRefSpecifier nm) = do
             sym <- refEnum nm
             pure $ TyEnum (Just sym) Nothing
 
-        getTS (AST.TSTypedefName nm)     = do
+        getTS (AST.TSTypedefName nm) = do
             sym <- refTypedef nm
             pure $ TyAlias sym
 
-        getTS (AST.TSTypeofExp e)        = TyTypeofExp <$> xExpression e
-        getTS (AST.TSTypeofDecl ds)   = do
+        getTS (AST.TSTypeofExp e) =
+            TyTypeofExp <$> xExpression e
+
+        getTS (AST.TSTypeofDecl ds) = do
             rt <- xTypeSpecifier ts
             cvr <- scanTypeQualifiers tq
             pure (TyTypeofType $ Type rt cvr)
