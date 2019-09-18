@@ -48,6 +48,7 @@ instance Reference RawType where
     refs (TyAlias sym) = S.singleton sym
     refs (TyTypeofExp e) = refs e
     refs (TyTypeofType t) = refs t
+    refs _ = S.empty
 
 instance Reference Type where
     refs (Type rt _) = refs rt

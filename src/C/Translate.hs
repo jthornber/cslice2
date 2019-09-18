@@ -3,17 +3,19 @@
 module C.Translate (
             toHir
     ) where
+
+
+import Debug.Trace
+
 import qualified C.AST as AST
 import C.HIR
 import C.Identifier
 import C.Int
-import C.Lexer
-import C.Parser
-import C.SymbolTable (SymbolTable, UUID, Symbol(..), Scope)
+import C.SymbolTable (SymbolTable, Symbol(..), Scope)
 import C.TypeCheck
 import qualified C.SymbolTable as ST
 
-import Control.Lens hiding (element)
+import Control.Lens hiding (element, op)
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.State.Lazy
@@ -29,6 +31,7 @@ import qualified Data.Set as S
 data TranslateState = TranslateState {
     _tsSymbolTable :: SymbolTable,
     _tsUIDCount :: Int,
+    _tsVarTypes :: Map Symbol Type,
     _tsStructDetails :: Map Symbol [StructEntry]
 }
 
@@ -40,7 +43,7 @@ data TranslateError = TranslateError String
 type Translate = ExceptT TranslateError (State TranslateState)
 
 emptyTS :: TranslateState
-emptyTS = TranslateState ST.empty 0 M.empty
+emptyTS = TranslateState ST.empty 0 M.empty M.empty
 
 runTranslate :: Translate a -> Either String a
 runTranslate x = case evalState (runExceptT x) emptyTS of
@@ -113,13 +116,13 @@ structField' fields nm = firstJust checkEntry fields
 refStructElt :: Type -> Identifier -> Translate Symbol
 refStructElt (Type rt _) nm = do
     ts <- get
-    sym <- structName' rt
+    structSym <- structName' rt
     let sd = view tsStructDetails ts
-    case M.lookup sym sd of
-        Nothing -> barf $ "struct isn't registered: " ++ show sym
+    case M.lookup structSym sd of
+        Nothing -> barf $ "struct isn't registered: " ++ show structSym
         (Just fields) -> case structField' fields nm of
-            Nothing -> barf $ "invalid struct field: " ++ show sym ++ "." ++ show nm
-            (Just sym') -> pure sym
+            Nothing -> barf $ "invalid struct field: " ++ show structSym ++ "." ++ show nm
+            (Just fieldSym) -> pure fieldSym
 
 ----------------------------------
 -- Define entries in symbol table
@@ -138,6 +141,7 @@ mkDef fn namespace nm = do
 defFun :: Identifier -> Translate Symbol
 defFun = mkDef ST.defFun "function"
 
+defStruct' :: Identifier -> Translate Symbol
 defStruct' = mkDef ST.defStruct "struct"
 
 defStruct :: Maybe [StructEntry] -> Identifier -> Translate Symbol
@@ -166,8 +170,11 @@ defLabel nm = do
             pure sym
         Nothing -> barf $ "multiply defined label"
 
-defVar :: Identifier -> Translate Symbol
-defVar = mkDef ST.defVar "var"
+defVar :: Identifier -> Type -> Translate Symbol
+defVar nm ty = do
+    sym <- mkDef ST.defVar "var" nm
+    modify $ over tsVarTypes (M.insert sym ty)
+    pure sym
 
 rmVar :: Identifier -> Translate ()
 rmVar nm = do
@@ -201,15 +208,20 @@ withScope sc m = do
     popScope
     pure r
 
-typeVar :: Identifier -> Translate Type
-typeVar = undefined
+typeVar :: Symbol -> Translate Type
+typeVar sym = do
+    ts <- get
+    case M.lookup sym $ view tsVarTypes ts of
+        Nothing -> barf $ "unable to retrieve type for variable: " ++ show sym
+        (Just ty) -> pure ty
 
+concatMapM :: (Monad m, Traversable t) => (a -> m [b]) -> t a -> m [b]
 concatMapM fn xs = do
     xs' <- mapM fn xs
     pure $ concat xs'
 
 maybeT :: (a -> Translate b) -> Maybe a -> Translate (Maybe b)
-maybeT fn Nothing = pure Nothing
+maybeT _ Nothing = pure Nothing
 maybeT fn (Just x) = Just <$> fn x
 
 barf :: String -> Translate a
@@ -267,14 +279,14 @@ xTypeName (AST.TypeName specs Nothing) = do
     cvr <- scanTypeQualifiers tq
     pure $ Type rty cvr
     where
-        (isTypedef, sc, ts, tq,fs, align) = dsSplit $ map toDeclSpec specs
+        (_, _, ts, tq, _, _) = dsSplit $ map toDeclSpec specs
 
 xTypeName (AST.TypeName specs (Just adecl)) = do
     rty <- xTypeSpecifier ts
     cvr <- scanTypeQualifiers tq
     applyAbstractDeclarator adecl (Type rty cvr)
     where
-        (isTypedef, sc, ts, tq,fs, align) = dsSplit $ map toDeclSpec specs
+        (_, _, ts, tq, _, _) = dsSplit $ map toDeclSpec specs
 
 applyAbstractDeclarator :: AST.AbstractDeclarator -> Type -> Translate Type
 applyAbstractDeclarator (AST.AbstractPointer ptr) ty = mkPtr ptr ty
@@ -299,9 +311,10 @@ applyDirectAbstractDeclarator (AST.DAFun (Just _) params) ty = do
     pure $ Type (TyFunction (FunType ty params' S.empty)) S.empty
 
 xExpression :: AST.Exp -> Translate Exp
-xExpression (AST.VarExp i) = do
-    t <- typeVar i
-    Exp t . VarExp <$> refVar i
+xExpression (AST.VarExp nm) = do
+    sym <- refVar nm
+    t <- typeVar sym
+    pure . Exp t . VarExp $ sym
 
 xExpression (AST.IntConstExp s ty n) = do
     pure . Exp (Type (TyInt s ty) S.empty) . LiteralExp . IntValue $ n
@@ -423,9 +436,9 @@ xExpression (AST.BlockExp nms items) = do
     nms' <- mapM refVar nms
     items' <- withScope ST.ScopeBlock $ concatMapM xBlockItem items
     -- FIXME: how do we ensure the last block item is an expression with a type
-    pure . Exp void $ BlockExp nms' items'
+    pure . Exp void' $ BlockExp nms' items'
     where
-        void = Type TyVoid S.empty
+        void' = Type TyVoid S.empty
 
 xExpression (AST.BuiltinVaArg) =
     pure $ Exp (Type TyVoid S.empty) BuiltinVaArg
@@ -502,15 +515,15 @@ dsSplit :: [AST.DeclarationSpecifier] -> (Bool,
                                           [AST.StorageClass], [AST.TypeSpecifier],
                                           [AST.TypeQualifier], [AST.FunctionSpecifier],
                                           [AST.AlignmentSpecifier])
-dsSplit = foldr get (False, [], [], [], [], [])
+dsSplit = foldr get' (False, [], [], [], [], [])
     where
-        get (AST.DSStorageClass AST.Typedef) (_, sc, ts, tq, fs, align) = (True, sc, ts, tq, fs, align)
-        get (AST.DSStorageClass x) (td, sc, ts, tq, fs, align) = (td, x:sc, ts, tq, fs, align)
-        get (AST.DSTypeSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, x:ts, tq, fs, align)
-        get (AST.DSTypeQualifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, x:tq, fs, align)
-        get (AST.DSFunctionSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, tq, x:fs, align)
-        get (AST.DSAlignmentSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, tq, fs, x:align)
-        get (AST.DSAttr _) r = r
+        get' (AST.DSStorageClass AST.Typedef) (_, sc, ts, tq, fs, align) = (True, sc, ts, tq, fs, align)
+        get' (AST.DSStorageClass x) (td, sc, ts, tq, fs, align) = (td, x:sc, ts, tq, fs, align)
+        get' (AST.DSTypeSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, x:ts, tq, fs, align)
+        get' (AST.DSTypeQualifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, x:tq, fs, align)
+        get' (AST.DSFunctionSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, tq, x:fs, align)
+        get' (AST.DSAlignmentSpecifier x) (td, sc, ts, tq, fs, align) = (td, sc, ts, tq, fs, x:align)
+        get' (AST.DSAttr _) r = r
 
 scanTypeQualifiers :: [AST.TypeQualifier] -> Translate (Set CVR)
 scanTypeQualifiers = foldM insert S.empty
@@ -582,29 +595,30 @@ xTypeSpecifier specs = case specs of
             cvr <- scanTypeQualifiers tq
             pure (TyTypeofType $ Type rt cvr)
             where
-                (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
+                (_, _, ts, tq, _, _) = dsSplit ds
 
         signed x = TyInt SIGNED x
         unsigned x = TyInt UNSIGNED x
 
 xEnumEntry :: AST.Enumerator -> Translate EnumEntry
 xEnumEntry (AST.Enumerator nm me) = do
-    sym <- defVar nm
+    sym <- defVar nm (Type (TyInt UNSIGNED INT) S.empty)
     me' <- mapM xExpression me
     pure $ EnumEntry sym me'
 
+xStructType :: AST.StructType -> StructType
 xStructType AST.Struct = Struct
 xStructType AST.Union = Union
 
 xStructDeclarator :: [AST.SpecifierQualifier] -> AST.StructDeclarator -> Translate [StructEntry]
 xStructDeclarator specs (AST.StructDeclarator decl me) = do
-    decl <- xDeclaration' (map toDeclSpec specs) decl
-    case decl of
+    decl' <- xDeclaration' (map toDeclSpec specs) decl
+    case decl' of
         (Declaration ty _ sym _) -> do
             width <- mapM xExpression me
             pure $ [StructEntry ty (Just sym) width]
         _ -> barf "bad struct field"
-xStructDeclarator specs (AST.StructDeclaratorNoDecl e) = do
+xStructDeclarator _ (AST.StructDeclaratorNoDecl e) = do
     e' <- xExpression e
     pure [StructEntryWidthOnly e']
 
@@ -651,34 +665,34 @@ convertParams (AST.ParameterTypeList pds vararg) = mapM expand pds
             cvr <- scanTypeQualifiers tq
             pure $ ParamEntry (Type rt cvr) Nothing
             where
-                (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
+                (_, _, ts, tq, _, _) = dsSplit ds
 
         expand (AST.PDAbstract ds (Just adecl)) = do
             rt <- xTypeSpecifier ts
             cvr <- scanTypeQualifiers tq
             ty' <- applyAbstractDeclarator adecl (Type rt cvr)
-            pure $ ParamEntry (Type rt cvr) Nothing
+            pure $ ParamEntry ty' Nothing
             where
-                (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
+                (_, _, ts, tq, _, _) = dsSplit ds
 
         -- FIXME: handle anonymous params
         toEntry :: Declaration -> Translate ParamEntry
-        toEntry (Declaration t msc nm ml) = pure $ ParamEntry t (Just nm)
-        toEntry (FunDeclaration t sc nm fs) = barf "Fun declaration can't be a param type"
+        toEntry (Declaration t _ nm _) = pure $ ParamEntry t (Just nm)
+        toEntry (FunDeclaration _ _ _ _) = barf "Fun declaration can't be a param type"
         toEntry (TypedefDeclaration _ _) = undefined
 
 expandDD :: Type -> (Maybe StorageClass) -> AST.DirectDeclarator -> Translate Declaration
 expandDD ty sc (AST.DDIdentifier nm) = do
-    sym <- defVar nm
+    sym <- defVar nm ty
     pure $ Declaration ty sc sym Nothing
 expandDD ty sc (AST.DDNested d) = applyDeclarator ty sc d
 
 -- FIXME: apply the qualifiers
-expandDD ty sc (AST.DDArray dd' tq Nothing _ _) =
+expandDD ty sc (AST.DDArray dd' _ Nothing _ _) =
     expandDD (Type (TyArray ty Nothing) S.empty) sc dd'
 
 -- FIXME: apply the qualifiers
-expandDD ty sc (AST.DDArray dd' tq (Just e) _ _) = do
+expandDD ty sc (AST.DDArray dd' _ (Just e) _ _) = do
     e' <- xExpression e
     expandDD (Type (TyArray ty (Just e')) S.empty) sc dd'
 
@@ -709,7 +723,7 @@ xDeclaration' ds declarator = do
             _ -> barf "bad typedef"
         else pure decl
     where
-        (isTypedef, sc, ts, tq, fs, align) = dsSplit ds
+        (isTypedef, sc, ts, tq, _, _) = dsSplit ds
 
 -- Declaration Type StorageClass Identifier (Maybe Literal)
 xDeclaration :: AST.Declaration -> Translate [Declaration]
@@ -736,8 +750,8 @@ xStatement (AST.DefaultStatement s) =
     DefaultStatement <$> xStatement s
 
 xStatement (AST.CompoundStatement nms items) = do
-    syms <- mapM defVar nms
-    withScope ST.ScopeBlock $ CompoundStatement syms . concat <$> mapM xBlockItem items
+    labels <- mapM defLabel nms
+    withScope ST.ScopeBlock $ CompoundStatement labels . concat <$> mapM xBlockItem items
 
 
 xStatement (AST.ExpressionStatement e) =
@@ -803,20 +817,20 @@ xExternalDeclaration (AST.ExternalDeclaration d) = do
     ds <- xDeclaration d
     pure $ map ExternalDeclaration ds
 
-xExternalDeclaration (AST.FunDef specs d decls s) = do
+xExternalDeclaration (AST.FunDef specs d _ s) = do
     d' <- xDeclaration' specs d
     case d' of
-        (Declaration t@(Type (TyFunction ft) _) _ nm  _) -> do
-            params' <- xParams decls
+        (Declaration (Type (TyFunction ft) _) _ nm  _) -> do
+            -- FIXME: finish
+            -- params' <- xParams decls
             s' <- withScope ST.ScopeFunction $ xStatement s
             pure [FunDef ft nm s'] -- FIXME: missing cvr
         x -> pure [ExternalDeclaration x]
-    where
-        singleton = (: [])
 
 xExternalDeclaration (AST.AsmDeclaration _) =
     pure [AsmDeclaration]
 
+{-
 xParams :: [AST.Declaration] -> Translate [ParamEntry]
 xParams ds = mapM singleDecl ds
     where
@@ -826,6 +840,7 @@ xParams ds = mapM singleDecl ds
             case d' of
                 (Declaration t _ nm Nothing) -> pure $ ParamEntry t (Just nm)
                 _ -> barf "bad parameter"
+-}
 
 toHir :: AST.TranslationUnit -> Either String TranslationUnit
 toHir ast = runTranslate $ xTranslationUnit ast

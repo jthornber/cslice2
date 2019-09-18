@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell, RankNTypes #-}
 module C.SymbolTable (
             Scope(..),
-    UUID(..),
+    UUID,
     Symbol(..),
     SymbolTable(..),
     empty,
@@ -24,7 +24,7 @@ module C.SymbolTable (
 
 import C.Identifier
 
-import Control.Lens hiding (element)
+import Control.Lens hiding (lens, element)
 import Data.Map (Map)
 import Data.Maybe
 import qualified Data.Map as M
@@ -86,6 +86,7 @@ defThing lens sym@(Symbol _ nm) (SymbolTable (f:fs)) =
     if M.member nm $ view lens f
     then Nothing
     else Just . SymbolTable $ (over lens (M.insert nm sym) f) : fs
+defThing _ _ _ = error "no active frame in symbol table"
 
 defFun = defThing fFuns
 defStruct = defThing fStructs
@@ -102,17 +103,17 @@ rmVar nm (SymbolTable (f:fs)) =
     if M.member nm $ view fVars f
     then Just $ SymbolTable $ (over fVars (M.delete nm) f) : fs
     else Nothing
-    where
-        vars = view fVars f
+rmVar _ _ = error "no active frame in symbol table"
 
 firstJust :: (a -> Maybe b) -> [a] -> Maybe b
 firstJust f = listToMaybe . mapMaybe f
 
--- refThing :: (SymbolTable -> Map Identifier Symbol) -> Identifier -> SymbolTable -> Maybe Symbol
-refThing fn nm (SymbolTable frames) = firstJust lookup frames
+refThing :: Ord k => Getting (Map k Symbol) Frame (Map k Symbol) ->
+                     k -> SymbolTable -> Maybe Symbol
+refThing fn nm (SymbolTable frames) = firstJust lookup' frames
     where
-        lookup :: Frame -> Maybe Symbol
-        lookup = M.lookup nm . view fn
+        lookup' :: Frame -> Maybe Symbol
+        lookup' = M.lookup nm . view fn
 
 refFun :: Identifier -> SymbolTable -> Maybe Symbol
 refFun = refThing fFuns
@@ -138,5 +139,5 @@ enterScope sc (SymbolTable frames) = SymbolTable $
 
 leaveScope :: SymbolTable -> Maybe SymbolTable
 leaveScope (SymbolTable []) = Nothing
-leaveScope (SymbolTable (f:fs)) = Just $ SymbolTable fs
+leaveScope (SymbolTable (_:fs)) = Just $ SymbolTable fs
 

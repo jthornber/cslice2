@@ -5,17 +5,16 @@ module C.PrettyPrint (
 import C.HIR
 import C.SymbolTable
 
-import Data.List (intercalate)
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text.Prettyprint.Doc
 
 withBraces :: Doc ann -> [Doc ann] -> Doc ann
-withBraces sep [] = braces emptyDoc
-withBraces sep xs = concatWith (<>) [lbrace, line, indent 8 entries, line, rbrace]
+withBraces _ [] = braces emptyDoc
+withBraces s xs = concatWith (<>) [lbrace, line, indent 8 entries, line, rbrace]
     where
         entries = concatWith join xs
-        join x y = x <> sep <> line <> y
+        join x y = x <> s <> line <> y
 
 mPretty :: (Pretty a) => Maybe a -> Doc ann
 mPretty Nothing = emptyDoc
@@ -76,6 +75,8 @@ printRawType (TyStruct st nm' entries) nm = header <> body <+> nm
 printRawType (TyStructRef st nm') nm = header <+> nm
     where
         header = pretty "struct" <+> pretty nm'
+
+printRawType (TyPointer ty) nm = undefined
 
 printRawType (TyFunction ft) nm = prettyFun ft nm
 

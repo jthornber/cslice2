@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module C.HIR (
-            EnumEntry(..),
+    EnumEntry(..),
     StructEntry(..),
     StructType(..),
     ParamEntry(..),
@@ -28,11 +28,8 @@ module C.HIR (
     ExternalDeclaration(..)
     ) where
 
-import C.Identifier
 import C.Int
 import C.SymbolTable
-
-import Control.Lens
 
 import Data.Set (Set)
 

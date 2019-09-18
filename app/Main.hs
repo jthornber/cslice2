@@ -3,6 +3,7 @@ module Main where
 import C.Lexer
 import C.Parser
 import C.PrettyPrint
+import C.Prune
 import C.Translate
 
 import Control.Monad
@@ -19,8 +20,8 @@ main = do
     case ast of
         Left e -> error e
         Right ast' -> do
-            -- print ast'
-            -- putStrLn "\n"
+            print ast'
+            putStrLn "\n"
             case toHir ast' of
                 Left e -> error e
                 Right hir -> do
@@ -28,6 +29,7 @@ main = do
                     putStrLn "\n"
                     putDocW 80 $ ppTranslationUnit hir
                     putStrLn ""
+                    print $ refs hir
     where
         parse s = runAlex s translation_unit
 
