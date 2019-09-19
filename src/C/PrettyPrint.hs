@@ -62,19 +62,19 @@ printRawType (TyArray ty (Just size)) nm = hcat [
 
 printRawType (TyStruct st nm' entries) nm = header <> body <+> nm
     where
-        header = pretty "struct" <+> pretty nm'
+        header = pretty st <+> pretty nm'
         body = case entries of
             [] -> space <> braces emptyDoc
-            entries -> space <>
-                       lbrace <>
-                       line <>
-                       indent 8 (vsep $ map ((<> semi) . pretty) $ entries) <>
-                       line <>
-                       rbrace
+            entries' -> space <>
+                        lbrace <>
+                        line <>
+                        indent 8 (vsep $ map ((<> semi) . pretty) $ entries') <>
+                        line <>
+                        rbrace
 
 printRawType (TyStructRef st nm') nm = header <+> nm
     where
-        header = pretty "struct" <+> pretty nm'
+        header = pretty st <+> pretty nm'
 
 printRawType (TyPointer ty) nm = undefined
 
