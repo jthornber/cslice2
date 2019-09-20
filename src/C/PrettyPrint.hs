@@ -239,7 +239,7 @@ instance Pretty Exp where
     pretty (Exp _ e) = pretty e
 
 instance Pretty Declaration where
-    pretty (Declaration t msc nm mlit) = hcat [
+    pretty (VarDeclaration t msc nm mlit) = hcat [
         maybe (emptyDoc) ((<> space) . pretty) msc,
         printType t (pretty nm),
         maybe (emptyDoc) pretty mlit]
@@ -252,6 +252,8 @@ instance Pretty Declaration where
     pretty (TypedefDeclaration t nm) = hsep [
         pretty "typedef",
         printType t (pretty nm)]
+
+    pretty (TypeDeclaration t) = printType t emptyDoc
 
 instance Pretty FunctionSpecifier where
     pretty Inline = pretty "inline"

@@ -5,6 +5,7 @@ module C.Prune (
 import C.HIR
 import C.SymbolTable
 
+import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
 
@@ -80,9 +81,10 @@ instance Reference Exp where
     refs (Exp t re) = refs t `S.union` refs re
 
 instance Reference Declaration where
-    refs (Declaration t _ sym mlit) = refs t `S.union` (S.singleton sym) `S.union` refs mlit
+    refs (VarDeclaration t _ sym mlit) = refs t `S.union` (S.singleton sym) `S.union` refs mlit
     refs (FunDeclaration t _ sym _) = refs t `S.union` (S.singleton sym)
     refs (TypedefDeclaration t sym) = refs t `S.union` refs sym
+    refs (TypeDeclaration t) = refs t
 
 instance Reference Literal where
     refs (Literal t v) = refs t `S.union` refs v
@@ -133,7 +135,82 @@ instance Reference ExternalDeclaration where
     refs (FunDef ft sym s) = refs ft `S.union` S.singleton sym `S.union` refs s
     refs AsmDeclaration = S.empty
 
-{-
-prune :: Set Symbol -> TranslationUnit -> TranslationUnit
-prune rs
--}
+class Prune a where
+    prune :: Set Symbol -> a -> Maybe a
+
+instance (Prune a) => Prune (Maybe a) where
+    prune _ Nothing = Nothing
+    prune rs (Just a) = Just $ prune rs a
+
+instance (Prune a) => Prune [a] where
+    prune rs = Just . catMaybes . map (prune rs)
+
+-- Remove any external definitions that aren't in the symbols
+-- FIXME: remove unused struct/enum entries
+
+instance Prune TranslationUnit where
+    prune rs (TranslationUnit ds) = TranslationUnit <$> prune rs ds
+
+instance Prune ExternalDeclaration where
+    prune rs (ExternalDeclaration d) = ExternalDeclaration <$> prune rs d
+    prune rs fd@(FunDef _ sym _) | S.member sym rs = pure fd
+    prune _ _ = Nothing
+
+instance Prune Declaration where
+    prune rs (VarDeclaration t msc sym mlit) | S.member sym rs = do
+        t' <- prune rs t
+        pure $ VarDeclaration t' msc sym mlit
+
+    prune rs (FunDeclaration t sc sym fs) | S.member sym rs = do
+        t' <- prune rs t
+        pure $ FunDeclaration t' sc sym fs
+    prune rs (TypedefDeclaration t sym) | S.member sym rs = do
+        t' <- prune rs t
+        pure $ TypedefDeclaration t' sym
+    prune rs (TypeDeclaration t) = TypeDeclaration <$> prune rs t
+    prune _ _ = Nothing  -- FIXME: is this right?
+
+instance Prune Type where
+    prune rs (Type rt cvr) = do
+        rt' <- prune rs rt
+        pure $ Type rt' cvr
+
+instance Prune RawType where
+    prune rs (TyEnum Nothing (Just es)) = do
+        es' <- prune rs es
+        pure $ TyEnum Nothing (Just es')
+    prune rs (TyEnum (Just sym) mes) | S.member sym rs = TyEnum (Just sym) <$> prune rs mes
+    prune _ (TyEnum _ _) = Nothing
+
+    prune rs (TyArray ty me) = do
+        ty' <- prune rs ty
+        pure $ TyArray ty' me
+
+    prune rs (TyStruct st sym entries) | S.member sym rs = do
+        entries' <- prune rs entries
+        pure $ TyStruct st sym entries'
+    prune _ (TyStruct _ _ _) = Nothing
+
+    prune rs (TyStructRef st sym) | S.member sym rs = pure $ TyStructRef st sym
+    prune _ (TyStructRef _ _) = Nothing
+
+    prune rs (TyPointer ty) = TyPointer <$> prune rs ty
+    prune rs (TyFunction ft) = TyFunction <$> prune rs ft
+    prune rs a@(TyAlias sym) | S.member sym rs = pure a
+    prune _ te@(TyTypeofExp _) = pure te
+    prune rs (TyTypeofType ty) = TyTypeofType <$> prune rs ty
+    prune _ rt = pure rt
+
+instance Prune EnumEntry where
+    prune rs e@(EnumEntry sym _) | S.member sym rs = pure e
+    prune _ _ = Nothing
+
+instance Prune StructEntry where
+    prune rs (StructEntry ty (Just sym) me) | S.member sym rs = do
+        ty' <- prune rs ty
+        pure $ StructEntry ty' (Just sym) me
+    prune _ _ = Nothing
+
+-- FIXME: finish
+instance Prune FunType where
+    prune _ ft@(FunType _ _ _) = pure ft

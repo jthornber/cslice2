@@ -612,9 +612,9 @@ xStructType AST.Union = Union
 
 xStructDeclarator :: [AST.SpecifierQualifier] -> AST.StructDeclarator -> Translate [StructEntry]
 xStructDeclarator specs (AST.StructDeclarator decl me) = do
-    decl' <- xDeclaration' (map toDeclSpec specs) decl
+    decl' <- xVarDeclaration (map toDeclSpec specs) decl
     case decl' of
-        (Declaration ty _ sym _) -> do
+        (VarDeclaration ty _ sym _) -> do
             width <- mapM xExpression me
             pure $ [StructEntry ty (Just sym) width]
         _ -> barf "bad struct field"
@@ -647,18 +647,19 @@ mkPtr (AST.Pointer tq (Just subptr)) ty = do
     pure $ Type (TyPointer ty') cvr
 
 expandPtr :: AST.Pointer -> Declaration -> Translate Declaration
-expandPtr ptr (Declaration ty sc nm ml) = do
+expandPtr ptr (VarDeclaration ty sc nm ml) = do
     ty' <- mkPtr ptr ty
-    pure $ Declaration ty' sc nm ml
+    pure $ VarDeclaration ty' sc nm ml
 
 expandPtr _ (FunDeclaration _ _ _ _) = undefined
 expandPtr _ (TypedefDeclaration _ _) = undefined
+expandPtr _ (TypeDeclaration _) = undefined
 
 -- FIXME: check vararg
 convertParams :: AST.ParameterTypeList -> Translate [ParamEntry]
 convertParams (AST.ParameterTypeList pds vararg) = mapM expand pds
     where
-        expand (AST.PDDeclarator ds d) = xDeclaration' ds d >>= toEntry
+        expand (AST.PDDeclarator ds d) = xVarDeclaration ds d >>= toEntry
 
         expand (AST.PDAbstract ds Nothing) = do
             rt <- xTypeSpecifier ts
@@ -677,14 +678,15 @@ convertParams (AST.ParameterTypeList pds vararg) = mapM expand pds
 
         -- FIXME: handle anonymous params
         toEntry :: Declaration -> Translate ParamEntry
-        toEntry (Declaration t _ nm _) = pure $ ParamEntry t (Just nm)
+        toEntry (VarDeclaration t _ nm _) = pure $ ParamEntry t (Just nm)
         toEntry (FunDeclaration _ _ _ _) = barf "Fun declaration can't be a param type"
         toEntry (TypedefDeclaration _ _) = undefined
+        toEntry (TypeDeclaration _) = undefined
 
 expandDD :: Type -> (Maybe StorageClass) -> AST.DirectDeclarator -> Translate Declaration
 expandDD ty sc (AST.DDIdentifier nm) = do
     sym <- defVar nm ty
-    pure $ Declaration ty sc sym Nothing
+    pure $ VarDeclaration ty sc sym Nothing
 expandDD ty sc (AST.DDNested d) = applyDeclarator ty sc d
 
 -- FIXME: apply the qualifiers
@@ -700,23 +702,24 @@ expandDD ty sc (AST.DDFun dd' params) = do
     ps <- convertParams params
     ed <- applyDeclarator ty sc (AST.Declarator Nothing dd')
     case ed of
-        (Declaration ty' sc' nm _) -> pure $ Declaration (Type (TyFunction (FunType ty' ps S.empty)) S.empty) sc' nm Nothing
+        (VarDeclaration ty' sc' nm _) -> pure $ VarDeclaration (Type (TyFunction (FunType ty' ps S.empty)) S.empty) sc' nm Nothing
         (FunDeclaration _ _ _ _)   -> barf "Unexpected function declaration"
         (TypedefDeclaration _ _) -> undefined
-expandDD ty sc (AST.DDFunPtr dd' nms)         = undefined
+        (TypeDeclaration _) -> undefined
+expandDD ty sc (AST.DDFunPtr dd' nms) = undefined
 
 initToDecl :: AST.InitDeclarator -> AST.Declarator
 initToDecl (AST.InitDeclarator d _) = d
 
-xDeclaration' :: [AST.DeclarationSpecifier] -> AST.Declarator -> Translate Declaration
-xDeclaration' ds declarator = do
+xVarDeclaration :: [AST.DeclarationSpecifier] -> AST.Declarator -> Translate Declaration
+xVarDeclaration ds declarator = do
     rt <- xTypeSpecifier ts
     sClass <- extractStorageClass sc
     cvr <- scanTypeQualifiers tq
     decl <- applyDeclarator (Type rt cvr) sClass declarator
     if isTypedef
         then case decl of
-            (Declaration ty Nothing (Symbol _ nm) Nothing) -> do
+            (VarDeclaration ty Nothing (Symbol _ nm) Nothing) -> do
                 rmVar nm
                 sym <- defTypedef nm
                 pure $ TypedefDeclaration ty sym
@@ -725,10 +728,21 @@ xDeclaration' ds declarator = do
     where
         (isTypedef, sc, ts, tq, _, _) = dsSplit ds
 
--- Declaration Type StorageClass Identifier (Maybe Literal)
+xTypeDeclaration :: [AST.DeclarationSpecifier] -> Translate Declaration
+xTypeDeclaration ds = do
+    rt <- xTypeSpecifier ts
+    sClass <- extractStorageClass sc
+    cvr <- scanTypeQualifiers tq
+    pure $ TypeDeclaration (Type rt cvr)
+    where
+        (_, sc, ts, tq, _, _) = dsSplit ds
+
 xDeclaration :: AST.Declaration -> Translate [Declaration]
+xDeclaration (AST.Declaration ds []) = do
+    r <- xTypeDeclaration ds
+    pure [r]
 xDeclaration (AST.Declaration ds declarators) =
-    mapM (xDeclaration' ds) .
+    mapM (xVarDeclaration ds) .
     map initToDecl $
     declarators
 xDeclaration AST.StaticAssert = pure []
@@ -818,9 +832,9 @@ xExternalDeclaration (AST.ExternalDeclaration d) = do
     pure $ map ExternalDeclaration ds
 
 xExternalDeclaration (AST.FunDef specs d _ s) = do
-    d' <- xDeclaration' specs d
+    d' <- xVarDeclaration specs d
     case d' of
-        (Declaration (Type (TyFunction ft) _) _ nm  _) -> do
+        (VarDeclaration (Type (TyFunction ft) _) _ nm  _) -> do
             -- FIXME: finish
             -- params' <- xParams decls
             s' <- withScope ST.ScopeFunction $ xStatement s
@@ -836,7 +850,7 @@ xParams ds = mapM singleDecl ds
     where
         singleDecl :: AST.Declaration -> Translate ParamEntry
         singleDecl (AST.Declaration specs [AST.InitDeclarator d _]) = do
-            d' <- xDeclaration' specs d
+            d' <- xVarDeclaration specs d
             case d' of
                 (Declaration t _ nm Nothing) -> pure $ ParamEntry t (Just nm)
                 _ -> barf "bad parameter"

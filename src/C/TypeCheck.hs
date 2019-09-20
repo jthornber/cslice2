@@ -41,6 +41,7 @@ structEltType _ sym = typeError "not a struct"
 
 returnType :: Type -> Type
 returnType (Type (TyFunction (FunType t _ _)) _) = t
+returnType _ = typeError "Not a function"
 
 intRank :: IntType -> Int
 intRank it = fromEnum it

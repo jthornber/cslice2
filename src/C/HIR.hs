@@ -69,6 +69,7 @@ data RawType =
     TyLongDouble |
 
     -- Enumerations
+    -- FIXME: remove maybe from symbol and use anonymous sym if necc.
     TyEnum (Maybe Symbol) (Maybe [EnumEntry]) |
 
     -- Derived types
@@ -158,10 +159,27 @@ data RawExp =
 data Exp = Exp Type RawExp
     deriving (Eq, Show)
 
+-- FIXME: ideally the TypeDeclaration would contain a symbol and
+-- we'd lose the Maybe Symbol from TyStruct and TyEnum.  But
+-- this would require splitting declarations into two sometimes.  eg,
+--
+--   struct foo {
+--     int x;
+--   } bar;
+--
+-- would become:
+--
+--   struct foo {
+--     int x;
+--   };
+--   struct foo bar;
+--
+-- I'd like to do this eventually.
 data Declaration =
-    Declaration Type (Maybe StorageClass) Symbol (Maybe Literal) |
+    VarDeclaration Type (Maybe StorageClass) Symbol (Maybe Literal) |
     FunDeclaration Type StorageClass Symbol (Set FunctionSpecifier) |
-    TypedefDeclaration Type Symbol
+    TypedefDeclaration Type Symbol |
+    TypeDeclaration Type -- eg, a struct, union or enum
     deriving (Eq, Show)
 
 data FunctionSpecifier =

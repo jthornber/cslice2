@@ -169,10 +169,12 @@ data RawType =
 
     -- Enumerations
     TyEnum (Maybe Symbol) (Maybe [EnumEntry]) |
+    TyEnumRef Symbol |
 
     -- Derived types
     TyArray Type (Maybe Integer) |
     TyStruct StructType (Maybe Symbol) (Maybe [StructEntry]) |
+    TyStructRef Symbol |
     TyPointer Type |
 
     TyFunction FunType |
