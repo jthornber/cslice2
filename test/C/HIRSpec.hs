@@ -5,14 +5,34 @@ module C.HIRSpec (
 import C.Lexer
 import C.Parser
 import C.Translate
+import C.PrettyPrint
 
+import Data.Char
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Util
 import Data.Text.Prettyprint.Doc.Render.String
 
+import Control.Applicative
 import Control.Exception (evaluate)
 import Test.Hspec
 import Test.QuickCheck
+
+import System.IO (hPutStr, hClose)
+import System.Process.Typed
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as L8
+import Control.Concurrent.STM (atomically)
+import Control.Exception (throwIO)
+
+normCode :: String -> IO String
+normCode code = withProcess_ indent $ \p -> do
+    hPutStr (getStdin p) code
+    hClose (getStdin p)
+    L8.unpack <$> atomically (getStdout p)
+    where
+        indent = setStdin createPipe
+               $ setStdout byteStringOutput
+               $ proc "indent" ["-linux"]
 
 repl :: String -> String
 repl input = do
@@ -27,11 +47,15 @@ repl input = do
         format w doc = layoutPretty (layoutOptions w) (unAnnotate doc)
         layoutOptions w = LayoutOptions {layoutPageWidth = AvailablePerLine w 1}
 
-printSame :: String -> Expectation
-printSame txt = repl txt `shouldBe` txt
+printSame txt = do
+    before <- normCode txt
+    after <- normCode $ repl txt
+    before `shouldBe` after
 
-printsAs :: String -> String -> Expectation
-printsAs txt expected = repl txt `shouldBe` expected
+printsAs input expected = do
+    actual <- normCode $ repl input
+    expected' <- normCode expected
+    actual `shouldBe` expected'
 
 inFn :: String -> String
 inFn body = "void fn() {\n        " ++ body ++ "\n}"
@@ -71,7 +95,7 @@ spec = parallel $ do
 
     describe "Declaration.Struct" $ do
         it "can declare a struct var" $
-            printSame "struct foo x;"
+            printSame "struct foo {}; struct foo x;"
 
         it "can declare an empty struct" $
             printSame "struct {} x;"

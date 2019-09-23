@@ -351,7 +351,7 @@ xExpression (AST.StructElt e n) = do
     pure . Exp (structEltType t sym) $ StructElt e' sym
 
 xExpression (AST.StructDeref e n) = do
-    e'@(Exp t _) <- xExpression e
+    e'@(Exp t _) <- xExpression (traceIt e)
     sym <- refVar n
     pure . Exp (structEltType (deref t) sym) $ StructDeref e' sym
 
@@ -566,7 +566,7 @@ xTypeSpecifier specs = case specs of
                     sym <- anonSym
                     pure $ TyStructRef (xStructType st) sym
                 (Just nm) -> do
-                    sym <- defStruct Nothing nm
+                    sym <- refStruct nm
                     pure $ TyStructRef (xStructType st) sym
 
         getTS (AST.StructOrUnionSpecifier st mnm (Just fields)) = do
@@ -831,15 +831,15 @@ xExternalDeclaration (AST.ExternalDeclaration d) = do
     ds <- xDeclaration d
     pure $ map ExternalDeclaration ds
 
-xExternalDeclaration (AST.FunDef specs d _ s) = do
-    d' <- xVarDeclaration specs d
-    case d' of
-        (VarDeclaration (Type (TyFunction ft) _) _ nm  _) -> do
-            -- FIXME: finish
-            -- params' <- xParams decls
-            s' <- withScope ST.ScopeFunction $ xStatement s
-            pure [FunDef ft nm s'] -- FIXME: missing cvr
-        x -> pure [ExternalDeclaration x]
+xExternalDeclaration (AST.FunDef specs d decls s) =
+    withScope ST.ScopeParam $ do
+        d' <- xVarDeclaration specs d
+        case traceIt d' of
+            (VarDeclaration (Type (TyFunction ft) _) _ nm  _) -> do
+                --params' <- xParams decls
+                s' <- withScope ST.ScopeFunction $ xStatement s
+                pure [FunDef ft nm s'] -- FIXME: missing cvr
+            x -> pure [ExternalDeclaration x]
 
 xExternalDeclaration (AST.AsmDeclaration _) =
     pure [AsmDeclaration]
@@ -858,3 +858,6 @@ xParams ds = mapM singleDecl ds
 
 toHir :: AST.TranslationUnit -> Either String TranslationUnit
 toHir ast = runTranslate $ xTranslationUnit ast
+
+traceIt :: (Show a) => a -> a
+traceIt x = trace (show x) x

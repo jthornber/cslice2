@@ -35,6 +35,7 @@ dependencies:
 - lens
 - mtl
 - prettyprinter
+- pretty-simple
 - protolude
 - stm
 - text

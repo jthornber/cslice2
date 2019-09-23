@@ -31,6 +31,8 @@ import qualified Data.Map as M
 
 import Data.Text.Prettyprint.Doc
 
+import Debug.Trace
+
 -- We have a couple of non-lexical scopes: global, and file.  Then we
 -- have function scope (eg, labels), and block scope (lexical scoping).
 
@@ -82,7 +84,7 @@ defFun, defStruct, defEnum, defVar, defTypedef
 
 defThing :: Lens' Frame (Map Identifier Symbol) -> Symbol ->
             SymbolTable -> Maybe SymbolTable
-defThing lens sym@(Symbol _ nm) (SymbolTable (f:fs)) =
+defThing lens sym@(Symbol _ nm) (SymbolTable (f:fs)) = trace ("defining " ++ show nm) $
     if M.member nm $ view lens f
     then Nothing
     else Just . SymbolTable $ (over lens (M.insert nm sym) f) : fs
@@ -134,10 +136,11 @@ refTypedef :: Identifier -> SymbolTable -> Maybe Symbol
 refTypedef = refThing fTypedefs
 
 enterScope :: Scope -> SymbolTable -> SymbolTable
-enterScope sc (SymbolTable frames) = SymbolTable $
+enterScope sc (SymbolTable frames) = trace ("entering scope " ++ show sc) $
+    SymbolTable $
     (Frame sc M.empty M.empty M.empty M.empty M.empty M.empty M.empty : frames)
 
 leaveScope :: SymbolTable -> Maybe SymbolTable
 leaveScope (SymbolTable []) = Nothing
-leaveScope (SymbolTable (_:fs)) = Just $ SymbolTable fs
+leaveScope (SymbolTable (_:fs)) = trace "leaving scope" $ Just $ SymbolTable fs
 

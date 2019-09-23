@@ -12,15 +12,17 @@ import C.SymbolTable
 
 import Data.Set (Set)
 import qualified Data.Set as S
+import Debug.Trace
 
 typeError :: String -> a
-typeError = undefined
+typeError = error
 
 notImplemented = typeError "not implemented"
 
 -- FIXME: rename to derefT?
 deref :: Type -> Type
-deref = notImplemented
+deref (Type (TyPointer ty) _) = ty
+deref t = trace (show t) $ error "not a pointer"
 
 -- Works with either a pointer or an array type
 arrayEltType :: Type -> Type

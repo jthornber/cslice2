@@ -1,10 +1,12 @@
 module C.Prune (
-    Reference(..)
+    Reference(..),
+    Prune(..)
     ) where
 
 import C.HIR
 import C.SymbolTable
 
+import Debug.Trace
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
@@ -145,15 +147,12 @@ instance (Prune a) => Prune (Maybe a) where
 instance (Prune a) => Prune [a] where
     prune rs = Just . catMaybes . map (prune rs)
 
--- Remove any external definitions that aren't in the symbols
--- FIXME: remove unused struct/enum entries
-
 instance Prune TranslationUnit where
-    prune rs (TranslationUnit ds) = TranslationUnit <$> prune rs ds
+    prune rs (TranslationUnit ds) = trace (show ds) $ TranslationUnit <$> prune rs ds
 
 instance Prune ExternalDeclaration where
     prune rs (ExternalDeclaration d) = ExternalDeclaration <$> prune rs d
-    prune rs fd@(FunDef _ sym _) | S.member sym rs = pure fd
+    prune rs fd@(FunDef _ sym _) | S.member sym rs = trace "here" $ pure fd
     prune _ _ = Nothing
 
 instance Prune Declaration where

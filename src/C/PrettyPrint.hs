@@ -76,7 +76,7 @@ printRawType (TyStructRef st nm') nm = header <+> nm
     where
         header = pretty st <+> pretty nm'
 
-printRawType (TyPointer ty) nm = undefined
+printRawType (TyPointer ty) nm = printType ty (pretty "*" <> nm)
 
 printRawType (TyFunction ft) nm = prettyFun ft nm
 
