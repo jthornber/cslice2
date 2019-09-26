@@ -1,5 +1,6 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
-
+        
 import C.HIR
 import C.Lexer
 import C.Parser
@@ -53,7 +54,7 @@ main = do
                     putStrLn ""
                     print $ refs hir
     where
-        parse s = runAlex s translation_unit
+        parse s = runAlex "<stdin>" s translation_unit
 
 {-
 findFunDef :: Identifier -> TranslationUnit -> Maybe ExternalDeclaration

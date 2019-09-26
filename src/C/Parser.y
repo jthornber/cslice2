@@ -36,7 +36,7 @@ import Debug.Trace
 
 %lexer {lexStep} {T_EOF _}
 %monad {Alex}
-%tokentype {Token AlexPosn}
+%tokentype {Token SourcePos}
 %error { parseError }
 
 %token
@@ -844,7 +844,7 @@ declaration_list :: {Reversed Declaration}
     | declaration_list declaration	{rcons $2 $1}
 
 {
-parseError :: Token AlexPosn -> Alex a
+parseError :: Token SourcePos -> Alex a
 parseError t = alexError $ show t
 
 {-
@@ -867,7 +867,7 @@ rcons x (Reversed xs) = Reversed (x:xs)
 unreverse :: Reversed a -> [a]
 unreverse (Reversed xs) = reverse xs
 
-toIdentifier :: Token AlexPosn -> Identifier
+toIdentifier :: Token SourcePos -> Identifier
 toIdentifier (T_IDENTIFIER n _) = Identifier n
 toIdentifier _ = error "not an identifier"
 
@@ -884,11 +884,11 @@ extractTypedefName (DDArray dd _ _ _ _) = extractTypedefName dd
 extractTypedefName (DDFun dd _) = extractTypedefName dd
 extractTypedefName (DDFunPtr dd _) = extractTypedefName dd
 
-unwrapString :: Token AlexPosn -> String
+unwrapString :: Token SourcePos -> String
 unwrapString (T_STRING s _) = s
 unwrapString _ = error "not a string"
 
-unwrapChar :: Token AlexPosn -> String
+unwrapChar :: Token SourcePos -> String
 unwrapChar (T_CHAR_LIT s _) = s
 unwrapChar _ = error "not a char"
 

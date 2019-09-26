@@ -1,7 +1,7 @@
 {
 module C.Lexer (
     Alex(..),
-    AlexPosn(..),
+    SourcePos(..),
     AlexUserState(..),
     alexError,
     runAlex,
@@ -153,7 +153,7 @@ $identletter($identletter|$digit)*	{withS (\s p -> return $ T_IDENTIFIER s p)}
 \'($inchar|@charesc)\'			{withS (\s p -> return $ T_CHAR_LIT s p)}
 
 {
-lexStep :: (Token AlexPosn -> Alex a) -> Alex a
+lexStep :: (Token SourcePos -> Alex a) -> Alex a
 lexStep k = do
     tok <- alexMonadScan
     case tok of
@@ -169,7 +169,7 @@ alexMonadScan = do
   sc <- alexGetStartCode
   case alexScan inp__ sc of
     AlexEOF -> alexEOF
-    AlexError ((AlexPn _ line column),_,_,_) -> alexError $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
+    AlexError ((SourcePos line column _),_,_,_) -> alexError $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
     AlexSkip  inp__' _len -> do
         alexSetInput inp__'
         alexMonadScan

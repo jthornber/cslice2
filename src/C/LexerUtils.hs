@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module C.LexerUtils (
     utf8Encode,
     Byte,
@@ -26,7 +27,7 @@ module C.LexerUtils (
     ignorePendingBytes,
     alexInputPrevChar,
     alexGetByte,
-    AlexPosn(..),
+    SourcePos(..),
     alexStartPos,
     alexMove,
     AlexState(..),
@@ -38,10 +39,7 @@ module C.LexerUtils (
     alexGetStartCode,
     alexSetStartCode,
     alexGetUserState,
-    alexSetUserState,
-    AlexAction,
-    andBegin,
-    token
+    alexSetUserState
     ) where
 
 import C.Token
@@ -52,6 +50,7 @@ import Data.List
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Text (Text)
 
 import Control.Applicative as App (Applicative (..))
 import Data.Word (Word8)
@@ -102,7 +101,7 @@ charPosMany ((b, e, offset):rs) c = case charPos b e c of
     Just n -> Just $ n + offset
     Nothing -> charPosMany rs c
 
-intToken :: (String -> Integer) -> String -> AlexPosn -> Token AlexPosn
+intToken :: (String -> Integer) -> String -> SourcePos -> Token SourcePos
 intToken fn s p = T_INTEGER (fn ns) (sign suffix) (intType suffix) p
     where
         (suffix', ns') = span suffixChar . reverse $ s
@@ -138,8 +137,8 @@ readHex = foldl' (\acc n -> acc * 16 + fromChar n) 0
 traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x
 
-alexEOF :: Alex (Token AlexPosn)
-alexEOF = return $ T_EOF (AlexPn 0 0 0)
+alexEOF :: Alex (Token SourcePos)
+alexEOF = return $ T_EOF (SourcePos 0 0 "<eof>")
 
 data AlexUserState = AlexUserState {
     typedefs :: Set Identifier,
@@ -195,7 +194,7 @@ alexInitUserState = AlexUserState {
 -- -----------------------------------------------------------------------------
 -- The input type
 
-type AlexInput = (AlexPosn,     -- current position,
+type AlexInput = (SourcePos,     -- current position,
                   Char,         -- previous char
                   [Byte],       -- pending bytes on current char
                   String)       -- current input string
@@ -223,47 +222,41 @@ alexGetByte (p,_,[],(c:s))  = let p' = alexMove p c
 -- `move_pos' calculates the new position after traversing a given character,
 -- assuming the usual eight character tab stops.
 
+data SourcePos = SourcePos {
+    sourceLine :: !Int,
+    sourceColumn :: !Int,
+    sourceFile :: !Text
+  } deriving (Show, Eq)
 
-data AlexPosn = AlexPn !Int !Int !Int
-        deriving (Eq,Show)
-
-alexStartPos :: AlexPosn
-alexStartPos = AlexPn 0 1 1
+alexStartPos :: Text -> SourcePos
+alexStartPos file = SourcePos 1 1 file
 
 tab_size :: Int
 tab_size = 8
 
-alexMove :: AlexPosn -> Char -> AlexPosn
-alexMove (AlexPn a l c) '\t' = AlexPn (a+1)  l     (((c+tab_size-1) `div` tab_size)*tab_size+1)
-alexMove (AlexPn a l _) '\n' = AlexPn (a+1) (l+1)   1
-alexMove (AlexPn a l c) _    = AlexPn (a+1)  l     (c+1)
+alexMove :: SourcePos -> Char -> SourcePos
+alexMove p '\t' = p { sourceColumn = (sourceColumn p) + tab_size }
+alexMove p '\n' = p { sourceLine = (sourceLine p + 1) }
+alexMove p _ = p { sourceColumn = (sourceColumn p) + 1 }
 
 -- -----------------------------------------------------------------------------
 -- Default monad
-
-
 data AlexState = AlexState {
-        alex_pos :: !AlexPosn,  -- position at current input location
+        alex_pos :: !SourcePos,  -- position at current input location
         alex_inp :: String,     -- the current input
         alex_chr :: !Char,      -- the character before the input
         alex_bytes :: [Byte],
-        alex_scd :: !Int        -- the current startcode
-
-      , alex_ust :: AlexUserState -- AlexUserState will be defined in the user program
-
+        alex_scd :: !Int,        -- the current startcode
+        alex_ust :: AlexUserState -- AlexUserState will be defined in the user program
     }
 
--- Compile with -funbox-strict-fields for best results!
-
-runAlex :: String -> Alex a -> Either String a
-runAlex input__ (Alex f)
-   = case f (AlexState {alex_pos = alexStartPos,
-                        alex_inp = input__,
+runAlex :: Text -> String -> Alex a -> Either String a
+runAlex source input (Alex f)
+   = case f (AlexState {alex_pos = alexStartPos source,
+                        alex_inp = input,
                         alex_chr = '\n',
                         alex_bytes = [],
-
                         alex_ust = alexInitUserState,
-
                         alex_scd = 0}) of Left msg -> Left msg
                                           Right ( _, a ) -> Right a
 
@@ -307,25 +300,9 @@ alexGetStartCode = Alex $ \s@AlexState{alex_scd=sc} -> Right (s, sc)
 alexSetStartCode :: Int -> Alex ()
 alexSetStartCode sc = Alex $ \s -> Right (s{alex_scd=sc}, ())
 
-
 alexGetUserState :: Alex AlexUserState
 alexGetUserState = Alex $ \s@AlexState{alex_ust=ust} -> Right (s,ust)
 
 alexSetUserState :: AlexUserState -> Alex ()
 alexSetUserState ss = Alex $ \s -> Right (s{alex_ust=ss}, ())
-
-
--- -----------------------------------------------------------------------------
--- Useful token actions
-
-type AlexAction result = AlexInput -> Int -> Alex result
-
--- perform an action for this token, and set the start code to a new value
-andBegin :: AlexAction result -> Int -> AlexAction result
-(action `andBegin` code) input__ len = do
-  alexSetStartCode code
-  action input__ len
-
-token :: (AlexInput -> Int -> token) -> AlexAction token
-token t input__ len = return (t input__ len)
 
