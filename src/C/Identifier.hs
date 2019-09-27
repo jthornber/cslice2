@@ -2,14 +2,15 @@ module C.Identifier (
     Identifier(..)
     ) where
 
+import Data.Text
 import Data.Text.Prettyprint.Doc
 
 data Identifier =
-    Identifier String
+    Identifier Text
     deriving (Eq, Ord)
 
 instance Show Identifier where
-    show (Identifier nm) = nm
+    show (Identifier nm) = show nm
 
 instance Pretty Identifier where
     pretty (Identifier nm) = pretty nm

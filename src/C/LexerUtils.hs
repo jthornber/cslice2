@@ -23,8 +23,8 @@ module C.LexerUtils (
     insertStruct,
     builtinTypedefs,
     alexInitUserState,
+    Input(..),
     AlexInput,
-    ignorePendingBytes,
     alexInputPrevChar,
     alexGetByte,
     SourcePos(..),
@@ -36,8 +36,6 @@ module C.LexerUtils (
     alexGetInput,
     alexSetInput,
     alexError,
-    alexGetStartCode,
-    alexSetStartCode,
     alexGetUserState,
     alexSetUserState
     ) where
@@ -51,11 +49,14 @@ import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
+import qualified Data.Text as Text
+import Text.Ascii
 
 import Control.Applicative as App (Applicative (..))
 import Data.Word (Word8)
 import Data.Char (ord)
 import qualified Data.Bits
+
 
 -- | Encode a Haskell String to a list of Word8 values, in UTF8 format.
 utf8Encode :: Char -> [Word8]
@@ -80,13 +81,13 @@ utf8Encode = map fromIntegral . go . ord
 
 type Byte = Word8
 
-withS :: ([a] -> t1 -> t2) -> (t1, b, c, [a]) -> Int -> t2
-withS fn (p, _, _, s) len = fn (take len s) p
+withS :: (Text -> SourcePos -> Token SourcePos) -> Input -> Int -> Alex (Token SourcePos)
+withS fn inp len = pure $ fn (Text.take len (inputText inp)) (inputPos inp)
 
-keyword :: Monad m => (t -> a) -> (t, b, c, d) -> p -> m a
-keyword v (p, _, _, _) _ = return (v p)
+keyword :: (SourcePos -> Token SourcePos) -> Input -> Int -> Alex (Token SourcePos)
+keyword fn inp _len = pure . fn $ inputPos inp
 
-punc :: (t -> a) -> (t, b, c, d) -> p -> Alex a
+punc :: (SourcePos -> Token SourcePos) -> Input -> Int -> Alex (Token SourcePos)
 punc = keyword
 
 charPos ::Char -> Char -> Char -> Maybe Integer
@@ -101,9 +102,10 @@ charPosMany ((b, e, offset):rs) c = case charPos b e c of
     Just n -> Just $ n + offset
     Nothing -> charPosMany rs c
 
-intToken :: (String -> Integer) -> String -> SourcePos -> Token SourcePos
-intToken fn s p = T_INTEGER (fn ns) (sign suffix) (intType suffix) p
+intToken :: (String -> Integer) -> Text -> SourcePos -> Token SourcePos
+intToken fn txt pos = T_INTEGER (fn ns) (sign suffix) (intType suffix) pos
     where
+        s = Text.unpack txt
         (suffix', ns') = span suffixChar . reverse $ s
         suffix = reverse suffix'
         ns = reverse ns'
@@ -194,23 +196,100 @@ alexInitUserState = AlexUserState {
 -- -----------------------------------------------------------------------------
 -- The input type
 
-type AlexInput = (SourcePos,     -- current position,
-                  Char,         -- previous char
-                  [Byte],       -- pending bytes on current char
-                  String)       -- current input string
+data Input = Input
+  { inputPos      :: {-# UNPACK #-} !SourcePos
+    -- ^ Current input position.
 
-ignorePendingBytes :: AlexInput -> AlexInput
-ignorePendingBytes (p,c,_ps,s) = (p,c,[],s)
+  , inputText     :: {-# UNPACK #-} !Text
+    -- ^ The text that needs to be lexed.
+
+  , inputPrev     :: {-# UNPACK #-} !SourcePos
+    -- ^ Location of the last consumed character.
+
+  , inputPrevChar :: {-# UNPACK #-} !Char
+    -- ^ The last consumed character.
+  }
+
+type AlexInput = Input
+
+-- | Prepare the text for lexing.
+initialInput :: Text {- ^ Where the text came from -} ->
+                Text {- ^ The text to lex -} -> Input
+initialInput file str = Input
+  { inputPos      = startPos file
+  , inputPrev     = beforeStartPos file
+  , inputPrevChar = '\n'    -- end of the virtual previous line
+  , inputText     = str
+  }
+
+startPos :: Text {- ^ Name of file/thing containing this -} -> SourcePos
+startPos file = SourcePos { sourceLine    = 1
+                          , sourceColumn  = 1
+                          , sourceFile    = file
+                          }
+
+beforeStartPos :: Text -> SourcePos
+beforeStartPos file = SourcePos { sourceLine    = 0
+                                , sourceColumn  = 0
+                                , sourceFile    = file
+                                }
+
+{- | Move one position back.  Assumes that newlines use a single bytes.
+
+This function is intended to be used when starting the lexing somewhere
+in the middle of the input, for example, if we are implementing a quasi
+quoter, and the previous part of the input is not in our language.
+-}
+{-
+prevPos :: SourcePos -> SourcePos
+prevPos p
+  | sourceColumn p > 1 = p { sourceColumn = sourceColumn p - 1
+                           }
+
+  | sourceLine p > 1   = p { sourceLine   = sourceLine p - 1
+                           , sourceColumn = 1
+                           }
+
+  | otherwise          = beforeStartPos (sourceFile p)
+-}
+
+-- | The file/thing for the current position.
+--
+ {-
+inputFile :: Input -> Text
+inputFile = sourceFile . inputPos
+-}
+
+-- | Update a 'SourcePos' for a particular matched character
+moveSourcePos :: Char -> SourcePos -> SourcePos
+moveSourcePos c p = SourcePos { sourceLine   = newLine
+                              , sourceColumn = newColumn
+                              , sourceFile   = sourceFile p
+                              }
+  where
+  line   = sourceLine p
+  column = sourceColumn p
+
+  (newLine,newColumn) = case c of
+                          '\t' -> (line, ((column + 7) `div` 8) * 8 + 1)
+                          '\n' -> (line + 1, 1)
+                          _    -> (line, column + 1)
 
 alexInputPrevChar :: AlexInput -> Char
-alexInputPrevChar (_p,c,_bs,_s) = c
+alexInputPrevChar = inputPrevChar
 
-alexGetByte :: AlexInput -> Maybe (Byte,AlexInput)
-alexGetByte (p,c,(b:bs),s) = Just (b,(p,c,bs,s))
-alexGetByte (_,_,[],[]) = Nothing
-alexGetByte (p,_,[],(c:s))  = let p' = alexMove p c
-                                  (b:bs) = utf8Encode c
-                              in p' `seq`  Just (b, (p', c, bs, s))
+{-# INLINE alexGetByte #-}
+alexGetByte :: AlexInput -> Maybe (Word8, AlexInput)
+alexGetByte (Input { inputPos = p, inputText = text }) =
+  do (c,text') <- Text.uncons text
+     let p'  = moveSourcePos c p
+         x   = ascii c
+         inp = Input { inputPrev     = p
+                     , inputPrevChar = c
+                     , inputPos      = p'
+                     , inputText     = text'
+                     }
+     x `seq` inp `seq` return (x, inp)
 
 -- -----------------------------------------------------------------------------
 -- Token positions
@@ -240,25 +319,19 @@ alexMove p '\n' = p { sourceLine = (sourceLine p + 1) }
 alexMove p _ = p { sourceColumn = (sourceColumn p) + 1 }
 
 -- -----------------------------------------------------------------------------
--- Default monad
+--
 data AlexState = AlexState {
-        alex_pos :: !SourcePos,  -- position at current input location
-        alex_inp :: String,     -- the current input
-        alex_chr :: !Char,      -- the character before the input
-        alex_bytes :: [Byte],
-        alex_scd :: !Int,        -- the current startcode
+        alex_inp :: AlexInput,     -- the current input
         alex_ust :: AlexUserState -- AlexUserState will be defined in the user program
     }
 
-runAlex :: Text -> String -> Alex a -> Either String a
-runAlex source input (Alex f)
-   = case f (AlexState {alex_pos = alexStartPos source,
-                        alex_inp = input,
-                        alex_chr = '\n',
-                        alex_bytes = [],
-                        alex_ust = alexInitUserState,
-                        alex_scd = 0}) of Left msg -> Left msg
-                                          Right ( _, a ) -> Right a
+runAlex :: Text -> Text -> Alex a -> Either String a
+runAlex source input (Alex f) =
+    case f (AlexState {alex_inp = initialInput source input,
+                       alex_ust = alexInitUserState
+                      }) of
+        Left msg -> Left msg
+        Right (_, a) -> Right a
 
 newtype Alex a = Alex { unAlex :: AlexState -> Either String (AlexState, a) }
 
@@ -282,23 +355,14 @@ instance Monad Alex where
   return = App.pure
 
 alexGetInput :: Alex AlexInput
-alexGetInput
- = Alex $ \s@AlexState{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} ->
-        Right (s, (pos,c,bs,inp__))
+alexGetInput = Alex $ \s@(AlexState inp _) ->
+    Right (s, inp)
 
 alexSetInput :: AlexInput -> Alex ()
-alexSetInput (pos,c,bs,inp__)
- = Alex $ \s -> case s{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} of
-                  state__@(AlexState{}) -> Right (state__, ())
+alexSetInput inp = Alex $ \s -> Right (s {alex_inp = inp}, ())
 
 alexError :: String -> Alex a
 alexError message = Alex $ const $ Left message
-
-alexGetStartCode :: Alex Int
-alexGetStartCode = Alex $ \s@AlexState{alex_scd=sc} -> Right (s, sc)
-
-alexSetStartCode :: Int -> Alex ()
-alexSetStartCode sc = Alex $ \s -> Right (s{alex_scd=sc}, ())
 
 alexGetUserState :: Alex AlexUserState
 alexGetUserState = Alex $ \s@AlexState{alex_ust=ust} -> Right (s,ust)

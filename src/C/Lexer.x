@@ -144,13 +144,13 @@ __builtin_offsetof		{keyword T_BUILTIN_OFFSETOF}
 __builtin_types_compatible_p	{keyword T_BUILTIN_TYPES_COMPATIBLE_P}
 __builtin_convert_vector	{keyword T_BUILTIN_CONVERT_VECTOR}
 
-$identletter($identletter|$digit)*	{withS (\s p -> return $ T_IDENTIFIER s p)}
+$identletter($identletter|$digit)*	{withS $ \txt pos -> T_IDENTIFIER txt pos}
 
-[1-9]$digit*@intSuffix			{withS (\s p -> return $ intToken readDec s p)}
-0[xX]$hexDigit+@intSuffix		{withS (\s p -> return $ intToken (readHex . drop 2) s p)}
-0$octDigit*@intSuffix			{withS (\s p -> return $ intToken (readOct . drop 1) s p)}
-\"($instr|@charesc)*\"			{withS (\s p -> return $ T_STRING s p)}
-\'($inchar|@charesc)\'			{withS (\s p -> return $ T_CHAR_LIT s p)}
+[1-9]$digit*@intSuffix			{withS $ \txt pos -> intToken readDec txt pos}
+0[xX]$hexDigit+@intSuffix		{withS $ \txt pos -> intToken (readHex . drop 2) txt pos}
+0$octDigit*@intSuffix			{withS $ \txt pos -> intToken (readOct . drop 1) txt pos}
+\"($instr|@charesc)*\"			{withS $ \txt pos -> T_STRING txt pos}
+\'($inchar|@charesc)\'			{withS $ \txt pos -> T_CHAR_LIT txt pos}
 
 {
 lexStep :: (Token SourcePos -> Alex a) -> Alex a
@@ -165,26 +165,26 @@ lexStep k = do
         t -> k t
 
 alexMonadScan = do
-  inp__ <- alexGetInput
-  sc <- alexGetStartCode
-  case alexScan inp__ sc of
+  inp <- alexGetInput
+  case alexScan inp 0 of
     AlexEOF -> alexEOF
-    AlexError ((SourcePos line column _),_,_,_) -> alexError $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
-    AlexSkip  inp__' _len -> do
-        alexSetInput inp__'
+    AlexError inp' -> alexError $ "lexical error at line " ++
+                                 (show . sourceLine . inputPos $ inp') ++
+                                 ", column " ++
+                                 (show . sourceColumn . inputPos $ inp')
+    AlexSkip inp' _len -> do
+        alexSetInput inp'
         alexMonadScan
-    AlexToken inp__' len action -> do
-        alexSetInput inp__'
-        action (ignorePendingBytes inp__) len
+    AlexToken inp' len action -> do
+        alexSetInput inp'
+        action inp len
 
 
 -- just ignore this token and scan another one
 -- skip :: AlexAction result
-skip _input _len = alexMonadScan
+-- skip _input _len = alexMonadScan
 
 -- ignore this token, but set the start code to a new value
 -- begin :: Int -> AlexAction result
-begin code _input _len = do alexSetStartCode code; alexMonadScan
-
-
+-- begin code _input _len = do alexSetStartCode code; alexMonadScan
 }

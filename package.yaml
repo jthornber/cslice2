@@ -39,6 +39,7 @@ dependencies:
 - protolude
 - stm
 - text
+- text-latin1
 - typed-process
 - unix
 - unordered-containers

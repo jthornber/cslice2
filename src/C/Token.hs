@@ -7,6 +7,8 @@ module C.Token (
 import C.Identifier
 import C.Int
 
+import Data.Text (Text)
+
 data Token a =
     T_ASM a |
     T_ATTRIBUTE a |
@@ -58,11 +60,11 @@ data Token a =
     T_STATIC_ASSERT a |
     T_THREAD_LOCAL a |
 
-    T_IDENTIFIER String a |
+    T_IDENTIFIER Text a |
     T_INTEGER Integer Sign IntType a |
-    T_CHAR_LIT String a |
-    T_STRING String a |
-    T_TYPEDEF_NAME String a |
+    T_CHAR_LIT Text a |
+    T_STRING Text a |
+    T_TYPEDEF_NAME Text a |
 
     T_ARROW a |
     T_ASSIGN a |

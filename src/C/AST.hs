@@ -43,6 +43,8 @@ module C.AST (
 import C.Identifier
 import C.Int
 
+import Data.Text (Text)
+
 data AssignOp =
     ASSIGN |
     MULT_ASSIGN |
@@ -98,8 +100,8 @@ data Attr = Attr
 data Exp =
     VarExp Identifier |
     IntConstExp Sign IntType Integer |
-    StringConstExp String |
-    CharConstExp String |
+    StringConstExp Text |
+    CharConstExp Char |
     CompoundLiteral TypeName [InitializerPair] |
     SubscriptExp Exp Exp |
     FuncallExp Exp [Exp] |
@@ -277,7 +279,7 @@ data AsmQualifier =
     deriving (Eq, Show)
 
 data AsmOperand =
-    AsmOperand String Exp
+    AsmOperand Text Exp
     deriving (Eq, Show)
 
 data TypeName =

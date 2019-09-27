@@ -32,6 +32,7 @@ import C.Int
 import C.SymbolTable
 
 import Data.Set (Set)
+import Data.Text (Text)
 
 data EnumEntry = EnumEntry Symbol (Maybe Exp)
     deriving (Eq, Show)
@@ -197,7 +198,7 @@ data Value =
     DoubleValue Double |
     EnumValue Symbol |
     CompoundValue Type [InitializerPair] |
-    StringValue String |
+    StringValue Text |
     CharValue Char
     deriving (Eq, Show)
 

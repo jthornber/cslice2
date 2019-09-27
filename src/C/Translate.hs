@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, OverloadedStrings #-}
 
 module C.Translate (
             toHir
@@ -25,6 +25,8 @@ import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Text (Text)
+import qualified Data.Text as T
 
 ---------------------------------------------------------------------
 -- Monad
@@ -37,7 +39,7 @@ data TranslateState = TranslateState {
 
 makeLenses ''TranslateState
 
-data TranslateError = TranslateError String
+data TranslateError = TranslateError Text
     deriving (Show)
 
 type Translate = ExceptT TranslateError (State TranslateState)
@@ -45,7 +47,7 @@ type Translate = ExceptT TranslateError (State TranslateState)
 emptyTS :: TranslateState
 emptyTS = TranslateState ST.empty 0 M.empty M.empty
 
-runTranslate :: Translate a -> Either String a
+runTranslate :: Translate a -> Either Text a
 runTranslate x = case evalState (runExceptT x) emptyTS of
     (Left (TranslateError msg)) -> Left msg
     (Right x') -> Right x'
@@ -63,13 +65,16 @@ mkSym nm = do
 anonSym :: Translate Symbol
 anonSym = mkSym $ Identifier ""
 
-mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) -> String ->
+mkRef :: (Identifier -> SymbolTable -> Maybe Symbol) -> Text ->
          Identifier -> Translate Symbol
 mkRef fn namespace nm = do
     s <- view tsSymbolTable <$> get
     case fn nm s of
-        Nothing -> barf $
-            "Couldn't find reference to '" ++ show nm ++ "' in " ++ namespace ++ " scope"
+        Nothing -> barf ["Couldn't find reference to '",
+                         showT nm,
+                         "' in ",
+                         namespace,
+                         " scope"]
         (Just sym) -> pure sym
 
 refFun :: Identifier -> Translate Symbol
@@ -91,7 +96,8 @@ refLabel :: Identifier -> Translate Symbol
 refLabel nm = do
     ts <- get
     case ST.refLabel nm (view tsSymbolTable ts) of
-        Nothing -> barf ("couldn't find label: " ++ show nm)
+        Nothing -> barf ["couldn't find label: ",
+                         showT nm]
         (Just v) -> pure v
 
 refVar :: Identifier -> Translate Symbol
@@ -103,7 +109,7 @@ refTypedef = mkRef ST.refTypedef "typedef"
 structName' :: RawType -> Translate Symbol
 structName' (TyStruct _ sym _) = pure sym
 structName' (TyStructRef _ sym) = pure sym
-structName' _ = barf "not a struct"
+structName' _ = barf ["not a struct"]
 
 structField' :: [StructEntry] -> Identifier -> Maybe Symbol
 structField' fields nm = firstJust checkEntry fields
@@ -119,16 +125,21 @@ refStructElt (Type rt _) nm = do
     structSym <- structName' rt
     let sd = view tsStructDetails ts
     case M.lookup structSym sd of
-        Nothing -> barf $ "struct isn't registered: " ++ show structSym
+        Nothing -> barf ["struct isn't registered: ",
+                         showT structSym
+                        ]
         (Just fields) -> case structField' fields nm of
-            Nothing -> barf $ "invalid struct field: " ++ show structSym ++ "." ++ show nm
+            Nothing -> barf ["invalid struct field: ",
+                             showT structSym,
+                             ".",
+                             showT nm]
             (Just fieldSym) -> pure fieldSym
 
 ----------------------------------
 -- Define entries in symbol table
 
 mkDef :: (Symbol -> SymbolTable -> Maybe SymbolTable) ->
-         String -> Identifier -> Translate Symbol
+         Text -> Identifier -> Translate Symbol
 mkDef fn namespace nm = do
     sym <- mkSym nm
     ts <- get
@@ -136,7 +147,11 @@ mkDef fn namespace nm = do
         Just st' -> do
             put $ over tsSymbolTable (const st') ts
             pure sym
-        Nothing -> barf $ "identifier already present in " ++ namespace ++ " scope: " ++ show nm
+        Nothing -> barf ["identifier already present in ",
+                         namespace,
+                         " scope: ",
+                         showT nm
+                         ]
 
 defFun :: Identifier -> Translate Symbol
 defFun = mkDef ST.defFun "function"
@@ -168,7 +183,7 @@ defLabel nm = do
         Just st' -> do
             put $ over tsSymbolTable (const st') ts
             pure sym
-        Nothing -> barf $ "multiply defined label"
+        Nothing -> barf ["multiply defined label"]
 
 defVar :: Identifier -> Type -> Translate Symbol
 defVar nm ty = do
@@ -181,7 +196,9 @@ rmVar nm = do
     ts <- get
     case ST.rmVar nm (view tsSymbolTable ts) of
         (Just st') -> put $ over tsSymbolTable (const st') ts
-        Nothing -> barf $ "asked to remove symbol that is not present: " ++ show nm
+        Nothing -> barf ["asked to remove symbol that is not present: ",
+                         showT nm
+                        ]
 
 defTypedef :: Identifier -> Translate Symbol
 defTypedef = mkDef ST.defTypedef "typedef"
@@ -212,7 +229,9 @@ typeVar :: Symbol -> Translate Type
 typeVar sym = do
     ts <- get
     case M.lookup sym $ view tsVarTypes ts of
-        Nothing -> barf $ "unable to retrieve type for variable: " ++ show sym
+        Nothing -> barf ["unable to retrieve type for variable: ",
+                         showT sym
+                        ]
         (Just ty) -> pure ty
 
 concatMapM :: (Monad m, Traversable t) => (a -> m [b]) -> t a -> m [b]
@@ -224,11 +243,11 @@ maybeT :: (a -> Translate b) -> Maybe a -> Translate (Maybe b)
 maybeT _ Nothing = pure Nothing
 maybeT fn (Just x) = Just <$> fn x
 
-barf :: String -> Translate a
-barf txt = throwError (TranslateError txt)
+barf :: [Text] -> Translate a
+barf txt = throwError (TranslateError $ T.concat txt)
 
-internalError :: String -> Translate a
-internalError txt = barf $ "internal error: " ++ txt
+internalError :: Text -> Translate a
+internalError txt = barf ["internal error: ", txt]
 
 ---------------------------------------------------------------------
 -- Expression translation
@@ -326,7 +345,7 @@ xExpression (AST.StringConstExp str) =
         constCharStar = Type (TyPointer (Type (TyInt SIGNED CHAR) (S.fromList [CONST]))) S.empty
 
 xExpression (AST.CharConstExp c) =
-    pure . Exp constChar . LiteralExp . CharValue . head $ c
+    pure . Exp constChar . LiteralExp . CharValue  $ c
     where
         constChar = Type (TyInt SIGNED CHAR) (S.fromList [CONST])
 
@@ -498,7 +517,9 @@ extractStorageClass :: [AST.StorageClass] -> Translate (Maybe StorageClass)
 extractStorageClass specs = case specs of
     []  -> pure Nothing
     [x] -> getSC x
-    _   -> barf $ "Too many storage classes: " ++ (show specs)
+    _   -> barf ["Too many storage classes: ",
+                 showT specs
+                ]
     where
         -- Typedef is a storage clas in the AST, but a separate
         -- declaration type in HIR.
@@ -509,7 +530,7 @@ extractStorageClass specs = case specs of
         getSC AST.Auto          = pure $ Just Auto
         getSC AST.Register      = pure $ Just Register
 
-        bad = barf "unsupported storage class"
+        bad = barf ["unsupported storage class"]
 
 dsSplit :: [AST.DeclarationSpecifier] -> (Bool,
                                           [AST.StorageClass], [AST.TypeSpecifier],
@@ -531,13 +552,15 @@ scanTypeQualifiers = foldM insert S.empty
         insert s AST.Const    = pure $ S.insert CONST s
         insert s AST.Volatile = pure $ S.insert VOLATILE s
         insert s AST.Restrict = pure $ S.insert RESTRICT s
-        insert _ AST.Atomic   = barf "Atomic not supported"
+        insert _ AST.Atomic   = barf ["Atomic not supported"]
 
 xTypeSpecifier :: [AST.TypeSpecifier] -> Translate RawType
 xTypeSpecifier specs = case specs of
-    [] -> barf "No type specifier given"
+    [] -> barf ["No type specifier given"]
     [x] -> getTS x
-    _ -> barf $ "Too many type specifiers: " ++ (show specs)
+    _ -> barf ["Too many type specifiers: ",
+               showT specs
+              ]
 
     where
         getTS :: AST.TypeSpecifier -> Translate RawType
@@ -557,8 +580,8 @@ xTypeSpecifier specs = case specs of
         getTS AST.Float                 = pure TyFloat
         getTS AST.Double                = pure TyDouble
         getTS AST.Bool                  = pure TyBool
-        getTS AST.Complex               = barf "complex nrs not implemented"
-        getTS AST.AtomicSpecifier       = barf "atomics not implemented"
+        getTS AST.Complex               = barf ["complex nrs not implemented"]
+        getTS AST.AtomicSpecifier       = barf ["atomics not implemented"]
 
         getTS (AST.StructOrUnionSpecifier st mnm Nothing) = do
             case mnm of
@@ -617,7 +640,7 @@ xStructDeclarator specs (AST.StructDeclarator decl me) = do
         (VarDeclaration ty _ sym _) -> do
             width <- mapM xExpression me
             pure $ [StructEntry ty (Just sym) width]
-        _ -> barf "bad struct field"
+        _ -> barf ["bad struct field"]
 xStructDeclarator _ (AST.StructDeclaratorNoDecl e) = do
     e' <- xExpression e
     pure [StructEntryWidthOnly e']
@@ -630,7 +653,7 @@ xStructEntry :: AST.StructDeclaration -> Translate [StructEntry]
 xStructEntry (AST.StructDeclaration specs declarators) =
     concat <$> mapM (xStructDeclarator specs) declarators
 
-xStructEntry AST.StructStaticAssert = barf "Struct static assert not supported"
+xStructEntry AST.StructStaticAssert = barf ["Struct static assert not supported"]
 
 applyDeclarator :: Type -> (Maybe StorageClass) -> AST.Declarator -> Translate Declaration
 applyDeclarator ty sc (AST.Declarator Nothing dd) = expandDD ty sc dd
@@ -679,7 +702,7 @@ convertParams (AST.ParameterTypeList pds vararg) = mapM expand pds
         -- FIXME: handle anonymous params
         toEntry :: Declaration -> Translate ParamEntry
         toEntry (VarDeclaration t _ nm _) = pure $ ParamEntry t (Just nm)
-        toEntry (FunDeclaration _ _ _ _) = barf "Fun declaration can't be a param type"
+        toEntry (FunDeclaration _ _ _ _) = barf ["Fun declaration can't be a param type"]
         toEntry (TypedefDeclaration _ _) = undefined
         toEntry (TypeDeclaration _) = undefined
 
@@ -703,7 +726,7 @@ expandDD ty sc (AST.DDFun dd' params) = do
     ed <- applyDeclarator ty sc (AST.Declarator Nothing dd')
     case ed of
         (VarDeclaration ty' sc' nm _) -> pure $ VarDeclaration (Type (TyFunction (FunType ty' ps S.empty)) S.empty) sc' nm Nothing
-        (FunDeclaration _ _ _ _)   -> barf "Unexpected function declaration"
+        (FunDeclaration _ _ _ _)   -> barf ["Unexpected function declaration"]
         (TypedefDeclaration _ _) -> undefined
         (TypeDeclaration _) -> undefined
 expandDD ty sc (AST.DDFunPtr dd' nms) = undefined
@@ -723,7 +746,7 @@ xVarDeclaration ds declarator = do
                 rmVar nm
                 sym <- defTypedef nm
                 pure $ TypedefDeclaration ty sym
-            _ -> barf "bad typedef"
+            _ -> barf ["bad typedef"]
         else pure decl
     where
         (isTypedef, sc, ts, tq, _, _) = dsSplit ds
@@ -856,8 +879,11 @@ xParams ds = mapM singleDecl ds
                 _ -> barf "bad parameter"
 -}
 
-toHir :: AST.TranslationUnit -> Either String TranslationUnit
+toHir :: AST.TranslationUnit -> Either Text TranslationUnit
 toHir ast = runTranslate $ xTranslationUnit ast
+
+showT :: (Show a) => a -> Text
+showT = T.pack . show
 
 traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x

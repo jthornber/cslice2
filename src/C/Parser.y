@@ -17,6 +17,10 @@ import C.AST
 import C.Token
 import C.Lexer
 
+import Data.Maybe
+import Data.Text (Text)
+import qualified Data.Text as T
+
 import Control.Monad
 import Debug.Trace
 
@@ -153,9 +157,9 @@ typedef_name_    {T_TYPEDEF_NAME _ _}
 
 %%
 
-string_const :: {String}
+string_const :: {Text}
     : string_const_			{unwrapString $1}
-    | string_const string_const_	{$1 ++ (unwrapString $2)}
+    | string_const string_const_	{T.append $1 (unwrapString $2)}
 
 identifier :: {Identifier}
     : identifier_	{toIdentifier $1}
@@ -403,7 +407,7 @@ init_declarator :: {InitDeclarator}
     | declarator '=' initializer	{InitDeclarator $1 (Just $3)}
     | declarator asm_declarator		{InitDeclarator $1 Nothing}
 
-asm_declarator :: {String}
+asm_declarator :: {Text}
     : 'asm' '(' string_const ')'	{$3}
 
 storage_class_specifier :: {StorageClass}
@@ -787,11 +791,11 @@ asm_operands_opt :: {Reversed AsmOperand}
     : {- empty -}		{rempty}
     | asm_operands		{$1}
 
-asm_clobbers :: {Reversed String}
+asm_clobbers :: {Reversed Text}
     : string_const			{Reversed [$1]}
     | asm_clobbers ',' string_const	{rcons $3 $1}
 
-asm_clobbers_opt :: {Reversed String}
+asm_clobbers_opt :: {Reversed Text}
     : {- empty -}		{rempty}
     | asm_clobbers		{$1}
 
@@ -816,7 +820,7 @@ asm_qualifier :: {AsmQualifier}
     | 'volatile'	{AsmVolatile}
     | 'goto'		{AsmGoto}
 
-asm_instructions :: {String}
+asm_instructions :: {Text}
     : string_const	{$1}
 
 ------------------------
@@ -884,13 +888,18 @@ extractTypedefName (DDArray dd _ _ _ _) = extractTypedefName dd
 extractTypedefName (DDFun dd _) = extractTypedefName dd
 extractTypedefName (DDFunPtr dd _) = extractTypedefName dd
 
-unwrapString :: Token SourcePos -> String
+unwrapString :: Token SourcePos -> Text
 unwrapString (T_STRING s _) = s
 unwrapString _ = error "not a string"
 
-unwrapChar :: Token SourcePos -> String
-unwrapChar (T_CHAR_LIT s _) = s
-unwrapChar _ = error "not a char"
+unwrapChar' :: Token SourcePos -> Maybe Char
+unwrapChar' (T_CHAR_LIT s _) = case T.uncons s of
+    (Just (c, _)) -> Just c
+    _ -> Nothing
+unwrapChar' _ = Nothing
+
+-- FIXME: handle error
+unwrapChar = fromJust . unwrapChar'
 
 traceIt x = trace (show x) x
 }

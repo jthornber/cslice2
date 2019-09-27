@@ -15,22 +15,26 @@ import Control.Monad.Except
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Util
+import qualified Data.Text.IO as T
+import Data.Text.Encoding (decodeUtf8)
 import Debug.Trace
 import Text.Pretty.Simple (pPrint)
 
-import System.IO (hPutStr, hClose)
+import System.IO (hClose)
 import System.Process.Typed
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Control.Concurrent.STM (atomically)
 
-normCode :: String -> IO String
+normCode :: Text -> IO Text
 normCode code = withProcess_ indent $ \p -> do
-    hPutStr (getStdin p) code
+    T.hPutStr (getStdin p) code
     hClose (getStdin p)
-    L8.unpack <$> atomically (getStdout p)
+    decodeUtf8 . L.toStrict <$> atomically (getStdout p)
     where
         indent = setStdin createPipe
                $ setStdout byteStringOutput
@@ -38,20 +42,20 @@ normCode code = withProcess_ indent $ \p -> do
 
 main :: IO ()
 main = do
-    input <- getContents
+    input <- T.getContents
     let ast = input `seq` parse input
     case ast of
         Left e -> error e
         Right ast' -> do
             pPrint ast'
-            putStrLn "\n"
+            T.putStrLn "\n"
             case toHir ast' of
-                Left e -> error e
+                Left e -> error . T.unpack $ e
                 Right hir -> do
                     pPrint hir
-                    putStrLn "\n"
+                    T.putStrLn "\n"
                     putDocW 80 $ ppTranslationUnit hir
-                    putStrLn ""
+                    T.putStrLn ""
                     print $ refs hir
     where
         parse s = runAlex "<stdin>" s translation_unit
