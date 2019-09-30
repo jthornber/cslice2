@@ -42,6 +42,7 @@ module C.AST (
 
 import C.Identifier
 import C.Int
+import C.SourcePos
 
 import Data.Text (Text)
 
@@ -98,61 +99,61 @@ data Attr = Attr
     deriving (Eq, Show)
 
 data Exp =
-    VarExp Identifier |
-    IntConstExp Sign IntType Integer |
-    StringConstExp Text |
-    CharConstExp Char |
-    CompoundLiteral TypeName [InitializerPair] |
-    SubscriptExp Exp Exp |
-    FuncallExp Exp [Exp] |
-    StructElt Exp Identifier |
-    StructDeref Exp Identifier |
-    CommaExp Exp Exp |
-    AssignExp AssignOp Exp Exp |
-    ConditionalExp Exp Exp Exp |
-    BinaryExp BinOp Exp Exp |
-    UnaryExp UnaryOp Exp |
-    CastExp TypeName Exp |
-    SizeofValueExp Exp |
-    SizeofTypeExp TypeName |
-    AlignofExp TypeName |
-    BlockExp [Identifier] [BlockItem] |     -- GNU extension
-    BuiltinVaArg |
-    BuiltinOffsetOf |
-    BuiltinTypesCompatible |
-    BuiltinConvertVector
+    VarExp Identifier SourcePos |
+    IntConstExp Sign IntType Integer SourcePos |
+    StringConstExp Text SourcePos |
+    CharConstExp Char SourcePos |
+    CompoundLiteral TypeName [InitializerPair] SourcePos |
+    SubscriptExp Exp Exp SourcePos |
+    FuncallExp Exp [Exp] SourcePos |
+    StructElt Exp Identifier SourcePos |
+    StructDeref Exp Identifier SourcePos |
+    CommaExp Exp Exp SourcePos |
+    AssignExp AssignOp Exp Exp SourcePos |
+    ConditionalExp Exp Exp Exp SourcePos|
+    BinaryExp BinOp Exp Exp SourcePos |
+    UnaryExp UnaryOp Exp SourcePos |
+    CastExp TypeName Exp SourcePos |
+    SizeofValueExp Exp SourcePos |
+    SizeofTypeExp TypeName SourcePos |
+    AlignofExp TypeName SourcePos |
+    BlockExp [Identifier] [BlockItem] SourcePos |
+    BuiltinVaArg SourcePos |
+    BuiltinOffsetOf SourcePos |
+    BuiltinTypesCompatible SourcePos |
+    BuiltinConvertVector SourcePos
     deriving (Eq, Show)
 
 data Declaration =
-    Declaration [DeclarationSpecifier] [InitDeclarator] |
-    StaticAssert
+    Declaration [DeclarationSpecifier] [InitDeclarator] SourcePos |
+    StaticAssert SourcePos
     deriving (Eq, Show)
 
 data InitDeclarator =
-    InitDeclarator Declarator (Maybe Initializer)
+    InitDeclarator Declarator (Maybe Initializer) SourcePos
     deriving (Eq, Show)
 
 data Initializer =
-    InitAssign Exp |
-    InitList [InitializerPair]
+    InitAssign Exp SourcePos |
+    InitList [InitializerPair] SourcePos
     deriving (Eq, Show)
 
 data InitializerPair =
-    InitializerPair (Maybe [Designator]) Initializer
+    InitializerPair (Maybe [Designator]) Initializer SourcePos
     deriving (Eq, Show)
 
 data Designator =
-    SubscriptDesignator Exp |
-    StructDesignator Identifier
+    SubscriptDesignator Exp SourcePos |
+    StructDesignator Identifier SourcePos
     deriving (Eq, Show)
 
 data DeclarationSpecifier =
-    DSStorageClass StorageClass |
-    DSTypeSpecifier TypeSpecifier |
-    DSTypeQualifier TypeQualifier |
-    DSFunctionSpecifier FunctionSpecifier |
-    DSAlignmentSpecifier AlignmentSpecifier |
-    DSAttr [Attr]
+    DSStorageClass StorageClass SourcePos |
+    DSTypeSpecifier TypeSpecifier SourcePos |
+    DSTypeQualifier TypeQualifier SourcePos |
+    DSFunctionSpecifier FunctionSpecifier SourcePos |
+    DSAlignmentSpecifier AlignmentSpecifier SourcePos |
+    DSAttr [Attr] SourcePos
     deriving (Eq, Show)
 
 data StorageClass =
@@ -165,35 +166,35 @@ data StorageClass =
     deriving (Eq, Show)
 
 data TypeSpecifier =
-    Void |
-    Char |
-    UnsignedChar |
-    Short |
-    UnsignedShort |
-    Int |
-    UnsignedInt |
-    Int128 |
-    UnsignedInt128 |
-    Long |
-    UnsignedLong |
-    LongLong |
-    UnsignedLongLong |
-    Float |
-    Double |
-    Bool |
-    Complex |
-    AtomicSpecifier |
-    StructOrUnionSpecifier StructType (Maybe Identifier) (Maybe [StructDeclaration]) |
-    EnumDefSpecifier (Maybe Identifier) [Enumerator] |
-    EnumRefSpecifier Identifier |
-    TSTypedefName Identifier |
-    TSTypeofExp Exp |
-    TSTypeofDecl [DeclarationSpecifier]
+    Void SourcePos |
+    Char SourcePos |
+    UnsignedChar SourcePos |
+    Short SourcePos |
+    UnsignedShort SourcePos |
+    Int SourcePos |
+    UnsignedInt SourcePos |
+    Int128 SourcePos |
+    UnsignedInt128 SourcePos |
+    Long SourcePos |
+    UnsignedLong SourcePos |
+    LongLong SourcePos |
+    UnsignedLongLong SourcePos |
+    Float SourcePos |
+    Double SourcePos |
+    Bool SourcePos |
+    Complex SourcePos |
+    AtomicSpecifier SourcePos |
+    StructOrUnionSpecifier StructType (Maybe Identifier) (Maybe [StructDeclaration]) SourcePos |
+    EnumDefSpecifier (Maybe Identifier) [Enumerator] SourcePos |
+    EnumRefSpecifier Identifier SourcePos |
+    TSTypedefName Identifier SourcePos |
+    TSTypeofExp Exp SourcePos |
+    TSTypeofDecl [DeclarationSpecifier] SourcePos
     deriving (Eq, Show)
 
 data SpecifierQualifier =
-    SQTypeSpecifier TypeSpecifier |
-    SQTypeQualifier TypeQualifier
+    SQTypeSpecifier TypeSpecifier SourcePos |
+    SQTypeQualifier TypeQualifier SourcePos
     deriving (Eq, Show)
 
 data StructType =
@@ -202,17 +203,17 @@ data StructType =
     deriving (Eq, Show)
 
 data StructDeclaration =
-    StructDeclaration [SpecifierQualifier] [StructDeclarator] |
-    StructStaticAssert
+    StructDeclaration [SpecifierQualifier] [StructDeclarator] SourcePos|
+    StructStaticAssert SourcePos
     deriving (Eq, Show)
 
 data StructDeclarator =
-    StructDeclarator Declarator (Maybe Exp) |
-    StructDeclaratorNoDecl Exp
+    StructDeclarator Declarator (Maybe Exp) SourcePos |
+    StructDeclaratorNoDecl Exp SourcePos
     deriving (Eq, Show)
 
 data Enumerator =
-    Enumerator Identifier (Maybe Exp)
+    Enumerator Identifier (Maybe Exp) SourcePos
     deriving (Eq, Show)
 
 data TypeQualifier =
@@ -228,48 +229,48 @@ data FunctionSpecifier =
     deriving (Eq, Show)
 
 data AlignmentSpecifier =
-    AlignAsType TypeName |
-    AlignAsConst Exp
+    AlignAsType TypeName SourcePos |
+    AlignAsConst Exp SourcePos
     deriving (Eq, Show)
 
 data Declarator =
-    Declarator (Maybe Pointer) DirectDeclarator
+    Declarator (Maybe Pointer) DirectDeclarator SourcePos
     deriving (Eq, Show)
 
 data DirectDeclarator =
-    DDIdentifier Identifier |
-    DDNested Declarator |
-    DDArray DirectDeclarator [TypeQualifier] (Maybe Exp) Bool Bool |   -- bools are 'static', '*'
-    DDFun DirectDeclarator ParameterTypeList |
-    DDFunPtr DirectDeclarator [Identifier]
+    DDIdentifier Identifier SourcePos |
+    DDNested Declarator SourcePos |
+    DDArray DirectDeclarator [TypeQualifier] (Maybe Exp) Bool Bool SourcePos |   -- bools are 'static', '*'
+    DDFun DirectDeclarator ParameterTypeList SourcePos |
+    DDFunPtr DirectDeclarator [Identifier] SourcePos
     deriving (Eq, Show)
 
 data Pointer =
-    Pointer [TypeQualifier] (Maybe Pointer)
+    Pointer [TypeQualifier] (Maybe Pointer) SourcePos
     deriving (Eq, Show)
 
 data ParameterTypeList =
-    ParameterTypeList [ParameterDeclaration] Bool
+    ParameterTypeList [ParameterDeclaration] Bool SourcePos
     deriving (Eq, Show)
 
 data ParameterDeclaration =
-    PDDeclarator [DeclarationSpecifier] Declarator |
-    PDAbstract [DeclarationSpecifier] (Maybe AbstractDeclarator)
+    PDDeclarator [DeclarationSpecifier] Declarator SourcePos |
+    PDAbstract [DeclarationSpecifier] (Maybe AbstractDeclarator) SourcePos
     deriving (Eq, Show)
 
 data AbstractDeclarator =
-    AbstractPointer Pointer |
-    AbstractDeclarator (Maybe Pointer) DirectAbstractDeclarator
+    AbstractPointer Pointer SourcePos |
+    AbstractDeclarator (Maybe Pointer) DirectAbstractDeclarator SourcePos
     deriving (Eq, Show)
 
 data DirectAbstractDeclarator =
-    DANested AbstractDeclarator |
-    DAArray (Maybe DirectAbstractDeclarator) [TypeQualifier] (Maybe Exp) Bool |
-    DAArrayStar (Maybe DirectAbstractDeclarator) |
-    DAFun (Maybe DirectAbstractDeclarator) ParameterTypeList
+    DANested AbstractDeclarator SourcePos |
+    DAArray (Maybe DirectAbstractDeclarator) [TypeQualifier] (Maybe Exp) Bool SourcePos |
+    DAArrayStar (Maybe DirectAbstractDeclarator) SourcePos |
+    DAFun (Maybe DirectAbstractDeclarator) ParameterTypeList SourcePos
     deriving (Eq, Show)
 
-data Asm = Asm
+data Asm = Asm SourcePos
     deriving (Eq, Show)
 
 data AsmQualifier =
@@ -283,39 +284,39 @@ data AsmOperand =
     deriving (Eq, Show)
 
 data TypeName =
-    TypeName [SpecifierQualifier] (Maybe AbstractDeclarator)
+    TypeName [SpecifierQualifier] (Maybe AbstractDeclarator) SourcePos
     deriving (Eq, Show)
 
 data Statement =
-    LabelStatement Identifier Statement |
-    CaseStatement Exp (Maybe Exp) Statement |
-    DefaultStatement Statement |
-    CompoundStatement [Identifier] [BlockItem] |
-    ExpressionStatement Exp |
-    IfStatement Exp Statement (Maybe Statement) |
-    SwitchStatement Exp Statement |
-    WhileStatement Exp Statement |
-    DoStatement Statement Exp |
-    ForStatement (Maybe Declaration) (Maybe Exp) (Maybe Exp) (Maybe Exp) Statement |
-    GotoStatement Identifier |
-    ContinueStatement |
-    BreakStatement |
-    ReturnStatement (Maybe Exp) |
-    EmptyStatement |
-    AsmStatement
+    LabelStatement Identifier Statement SourcePos |
+    CaseStatement Exp (Maybe Exp) Statement SourcePos |
+    DefaultStatement Statement SourcePos |
+    CompoundStatement [Identifier] [BlockItem] SourcePos |
+    ExpressionStatement Exp SourcePos |
+    IfStatement Exp Statement (Maybe Statement) SourcePos |
+    SwitchStatement Exp Statement SourcePos |
+    WhileStatement Exp Statement SourcePos |
+    DoStatement Statement Exp SourcePos |
+    ForStatement (Maybe Declaration) (Maybe Exp) (Maybe Exp) (Maybe Exp) Statement SourcePos |
+    GotoStatement Identifier SourcePos |
+    ContinueStatement SourcePos |
+    BreakStatement SourcePos |
+    ReturnStatement (Maybe Exp) SourcePos |
+    EmptyStatement SourcePos |
+    AsmStatement SourcePos
     deriving (Eq, Show)
 
 data BlockItem =
-    BIDeclaration Declaration |
-    BIStatement Statement
+    BIDeclaration Declaration SourcePos |
+    BIStatement Statement SourcePos
     deriving (Eq, Show)
 
 data TranslationUnit =
-    TranslationUnit [ExternalDeclaration]
+    TranslationUnit [ExternalDeclaration] SourcePos
     deriving (Eq, Show)
 
 data ExternalDeclaration =
-    ExternalDeclaration Declaration |
-    FunDef [DeclarationSpecifier] Declarator [Declaration] Statement |
-    AsmDeclaration Asm
+    ExternalDeclaration Declaration SourcePos |
+    FunDef [DeclarationSpecifier] Declarator [Declaration] Statement SourcePos |
+    AsmDeclaration Asm SourcePos
     deriving (Eq, Show)

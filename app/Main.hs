@@ -47,13 +47,13 @@ main = do
     case ast of
         Left e -> error e
         Right ast' -> do
-            pPrint ast'
-            T.putStrLn "\n"
+            -- pPrint ast'
+            -- T.putStrLn "\n"
             case toHir ast' of
                 Left e -> error . T.unpack $ e
                 Right hir -> do
-                    pPrint hir
-                    T.putStrLn "\n"
+                    -- pPrint hir
+                    -- T.putStrLn "\n"
                     putDocW 80 $ ppTranslationUnit hir
                     T.putStrLn ""
                     print $ refs hir

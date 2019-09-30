@@ -37,11 +37,13 @@ module C.LexerUtils (
     alexSetInput,
     alexError,
     alexGetUserState,
-    alexSetUserState
+    alexSetUserState,
+    getCurrentPos
     ) where
 
 import C.Token
 import C.Int
+import C.SourcePos
 
 import Debug.Trace
 import Data.List
@@ -81,11 +83,13 @@ utf8Encode = map fromIntegral . go . ord
 
 type Byte = Word8
 
-withS :: (Text -> SourcePos -> Token SourcePos) -> Input -> Int -> Alex (Token SourcePos)
+withS :: (Text -> SourcePos -> Token SourcePos) ->
+         Input -> Int -> Alex (Token SourcePos)
 withS fn inp len = pure $ fn (Text.take len (inputText inp)) (inputPos inp)
 
-keyword :: (SourcePos -> Token SourcePos) -> Input -> Int -> Alex (Token SourcePos)
-keyword fn inp _len = pure . fn $ inputPos inp
+keyword :: (SourcePos -> Token SourcePos) ->
+           Input -> Int -> Alex (Token SourcePos)
+keyword fn inp _len = pure . fn . inputPos $ inp
 
 punc :: (SourcePos -> Token SourcePos) -> Input -> Int -> Alex (Token SourcePos)
 punc = keyword
@@ -140,7 +144,7 @@ traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x
 
 alexEOF :: Alex (Token SourcePos)
-alexEOF = return $ T_EOF (SourcePos 0 0 "<eof>")
+alexEOF = return . T_EOF $ SourcePos 0 0 "<eof>"
 
 data AlexUserState = AlexUserState {
     typedefs :: Set Identifier,
@@ -301,12 +305,6 @@ alexGetByte (Input { inputPos = p, inputText = text }) =
 -- `move_pos' calculates the new position after traversing a given character,
 -- assuming the usual eight character tab stops.
 
-data SourcePos = SourcePos {
-    sourceLine :: !Int,
-    sourceColumn :: !Int,
-    sourceFile :: !Text
-  } deriving (Show, Eq)
-
 alexStartPos :: Text -> SourcePos
 alexStartPos file = SourcePos 1 1 file
 
@@ -369,4 +367,7 @@ alexGetUserState = Alex $ \s@AlexState{alex_ust=ust} -> Right (s,ust)
 
 alexSetUserState :: AlexUserState -> Alex ()
 alexSetUserState ss = Alex $ \s -> Right (s{alex_ust=ss}, ())
+
+getCurrentPos :: Alex SourcePos
+getCurrentPos = Alex $ \s -> Right (s, inputPos . alex_inp $ s)
 
