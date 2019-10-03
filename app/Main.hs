@@ -15,6 +15,7 @@ import Control.Monad.Except
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Prettyprint.Doc
@@ -22,6 +23,7 @@ import Data.Text.Prettyprint.Doc.Util
 import qualified Data.Text.IO as T
 import Data.Text.Encoding (decodeUtf8)
 import Debug.Trace
+import Options.Applicative
 import Text.Pretty.Simple (pPrint)
 
 import System.IO (hClose)
@@ -40,23 +42,45 @@ normCode code = withProcess_ indent $ \p -> do
                $ setStdout byteStringOutput
                $ proc "indent" ["-linux"]
 
+------------------------------------------------------
+
+data Flags = Flags {
+    showAST :: Bool,
+    showPreHIR :: Bool,
+    showPostHIR :: Bool
+}
+
+flags :: Parser Flags
+flags = Flags <$> switch (long "ast" <> help "Show the abstract syntax tree")
+              <*> switch (long "hir-pre-slice" <> help "Show high level intermediate representation, before slice")
+              <*> switch (long "hir-post-slice" <> help "Show high level intermediate representation, after slice")
+
+options :: ParserInfo Flags
+options = info (flags <**> helper)
+            (fullDesc <> progDesc "Slice and dice C programs in exciting ways."
+                      <> header "cslice - Unit test legacy C code")
+
+when' b m = if b then m else pure ()
+
 main :: IO ()
 main = do
+    flags <- execParser options
     input <- T.getContents
     let ast = input `seq` parse input
     case ast of
         Left e -> error e
         Right ast' -> do
-            -- pPrint ast'
-            -- T.putStrLn "\n"
+            when' (showAST flags) $ do
+                pPrint ast'
+                T.putStrLn "\n"
             case toHir ast' of
                 Left e -> error . T.unpack $ e
                 Right hir -> do
-                    -- pPrint hir
-                    -- T.putStrLn "\n"
+                    when' (showPreHIR flags) $ do
+                        pPrint hir
+                        T.putStrLn "\n"
                     putDocW 80 $ ppTranslationUnit hir
                     T.putStrLn ""
-                    print $ refs hir
     where
         parse s = runAlex "<stdin>" s translation_unit
 

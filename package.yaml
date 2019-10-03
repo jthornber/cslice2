@@ -34,6 +34,7 @@ dependencies:
 - containers
 - lens
 - mtl
+- optparse-applicative
 - prettyprinter
 - pretty-simple
 - protolude
