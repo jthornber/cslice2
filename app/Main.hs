@@ -60,6 +60,7 @@ options = info (flags <**> helper)
             (fullDesc <> progDesc "Slice and dice C programs in exciting ways."
                       <> header "cslice - Unit test legacy C code")
 
+when' :: Applicative f => Bool -> f () -> f ()
 when' b m = if b then m else pure ()
 
 main :: IO ()
@@ -68,7 +69,7 @@ main = do
     input <- T.getContents
     let ast = input `seq` parse input
     case ast of
-        Left e -> error e
+        Left e -> error $ show e
         Right ast' -> do
             when' (showAST flags) $ do
                 pPrint ast'

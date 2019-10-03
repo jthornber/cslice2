@@ -38,7 +38,8 @@ module C.LexerUtils (
     alexError,
     alexGetUserState,
     alexSetUserState,
-    getCurrentPos
+    getCurrentPos,
+    ParseError
     ) where
 
 import C.Token
@@ -323,15 +324,20 @@ data AlexState = AlexState {
         alex_ust :: AlexUserState -- AlexUserState will be defined in the user program
     }
 
-runAlex :: Text -> Text -> Alex a -> Either String a
+data ParseError = ParseError {
+    errorPos :: SourcePos,
+    errorMessage :: Text
+} deriving (Eq, Show)
+
+runAlex :: Text -> Text -> Alex a -> Either ParseError a
 runAlex source input (Alex f) =
     case f (AlexState {alex_inp = initialInput source input,
                        alex_ust = alexInitUserState
                       }) of
-        Left msg -> Left msg
+        Left err -> Left err
         Right (_, a) -> Right a
 
-newtype Alex a = Alex { unAlex :: AlexState -> Either String (AlexState, a) }
+newtype Alex a = Alex { unAlex :: AlexState -> Either ParseError (AlexState, a) }
 
 instance Functor Alex where
   fmap f a = Alex $ \s -> case unAlex a s of
@@ -359,8 +365,10 @@ alexGetInput = Alex $ \s@(AlexState inp _) ->
 alexSetInput :: AlexInput -> Alex ()
 alexSetInput inp = Alex $ \s -> Right (s {alex_inp = inp}, ())
 
-alexError :: String -> Alex a
-alexError message = Alex $ const $ Left message
+alexError :: Text -> Alex a
+alexError message = do
+    pos <- getCurrentPos
+    Alex . const . Left $ ParseError pos message
 
 alexGetUserState :: Alex AlexUserState
 alexGetUserState = Alex $ \s@AlexState{alex_ust=ust} -> Right (s,ust)

@@ -884,7 +884,7 @@ declaration_list :: {Reversed Declaration}
 
 {
 parseError :: Token SourcePos -> Alex a
-parseError t = alexError $ show t
+parseError t = alexError . T.pack $ show t
 
 {-
 "Parse error at line " ++ (show line) ++ ":" ++ (show col)

@@ -9,7 +9,10 @@ data SourcePos = SourcePos {
     sourceLine :: !Int,
     sourceColumn :: !Int,
     sourceFile :: !Text
-} deriving (Show, Eq)
+} deriving (Eq)
+
+instance Show SourcePos where
+    show (SourcePos line col file) = show file ++ ":" ++ show line ++ ":" ++ show col
 
 data SourceRange = SourceRange {
     rangeBegin :: !SourcePos,

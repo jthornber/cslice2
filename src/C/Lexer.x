@@ -12,6 +12,7 @@ module C.Lexer (
 
 import C.Token
 import C.LexerUtils
+import qualified Data.Text as T
 }
 
 $digit = [0-9]
@@ -168,7 +169,7 @@ alexMonadScan = do
   inp <- alexGetInput
   case alexScan inp 0 of
     AlexEOF -> alexEOF
-    AlexError inp' -> alexError $ "lexical error at line " ++
+    AlexError inp' -> alexError . T.pack $ "lexical error at line " ++
                                  (show . sourceLine . inputPos $ inp') ++
                                  ", column " ++
                                  (show . sourceColumn . inputPos $ inp')
