@@ -6,6 +6,7 @@ import C.HIR
 import C.Identifier
 import C.Lexer
 import C.Parser
+import C.PreProcessor
 import C.PrettyPrint
 import C.Slice
 import C.SymbolTable
@@ -45,15 +46,28 @@ indentCode code = withProcess_ indent $ \p -> do
 ------------------------------------------------------
 
 data Flags = Flags {
-    showAST :: Bool,
-    showPreHIR :: Bool,
-    showPostHIR :: Bool
-}
+    flagShowAST :: Bool,
+    flagShowPreHIR :: Bool,
+    flagShowPostHIR :: Bool,
+    flagIncludes :: [String],
+    flagDefines :: [String],
+    flagInputFile :: String
+} deriving (Show)
 
 flags' :: Parser Flags
-flags' = Flags <$> switch (long "ast" <> help "Show the abstract syntax tree")
-               <*> switch (long "hir-pre-slice" <> help "Show high level intermediate representation, before slice")
-               <*> switch (long "hir-post-slice" <> help "Show high level intermediate representation, after slice")
+flags' = Flags <$> switch (long "ast" <>
+                           help "Show the abstract syntax tree")
+               <*> switch (long "hir-pre-slice" <>
+                           help "Show high level intermediate representation, before slice")
+               <*> switch (long "hir-post-slice" <>
+                           help "Show high level intermediate representation, after slice")
+               <*> many (strOption (short 'I' <>
+                                    metavar "INCLUDE" <>
+                                    help "Specify include directory for the preprocessor"))
+               <*> many (strOption (short 'D' <>
+                                    metavar "DEFINE" <>
+                                    help "Preprocessor definition"))
+               <*> argument str (metavar "FILE")
 
 options :: ParserInfo Flags
 options = info (flags' <**> helper)
@@ -93,10 +107,7 @@ prefixErr = T.append "error: "
 printErr :: SliceError -> IO ()
 printErr (SliceError Nothing msg) = T.putStrLn $ prefixErr msg
 printErr (SliceError (Just pos) msg) =
-    T.putStrLn $ prefixErr $ T.concat [
-        T.pack $ show pos,
-        ": ",
-        msg]
+    T.putStrLn . prefixErr $ T.concat [ T.pack $ show pos, ": ", msg]
 
 -- FIXME: remove explicit cases
 runSlice :: Flags -> Text -> Identifier -> IO ()
@@ -104,21 +115,21 @@ runSlice flags input nm = do
     case parse input of
         (Left err) -> printErr err
         (Right ast) -> do
-            when' (showAST flags) $ do
+            when' (flagShowAST flags) $ do
                 pPrint ast
                 T.putStrLn "\n"
 
             case toHir ast of
                 (Left err) -> printErr err
                 (Right hir) -> do
-                    when' (showPreHIR flags) $ do
+                    when' (flagShowPreHIR flags) $ do
                         pPrint hir
                         T.putStrLn "\n"
 
                     case sliceFun nm hir of
                         (Left err) -> printErr err
                         (Right hir') -> do
-                            when' (showPostHIR flags) $ do
+                            when' (flagShowPostHIR flags) $ do
                                 pPrint hir'
                                 T.putStrLn "\n"
 
@@ -130,6 +141,12 @@ runSlice flags input nm = do
 main :: IO ()
 main = do
     flags <- execParser options
-    input <- T.getContents
+
+    let cppOpts = CppOptions {
+        cppInputFile = T.pack $ flagInputFile flags,
+        cppIncludes = map T.pack $ flagIncludes flags,
+        cppDefines = map T.pack $ flagDefines flags
+    }
+    input <- cpp cppOpts
     input `seq` runSlice flags input (Identifier "inc_x")
 
