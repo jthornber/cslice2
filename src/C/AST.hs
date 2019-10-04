@@ -124,28 +124,71 @@ data Exp =
     BuiltinConvertVector SourcePos
     deriving (Eq, Show)
 
+instance Pos Exp where
+    getPos (VarExp _ pos) = pos
+    getPos (IntConstExp _ _ _ pos) = pos
+    getPos (StringConstExp _ pos) = pos
+    getPos (CharConstExp _ pos) = pos
+    getPos (CompoundLiteral _ _ pos) = pos
+    getPos (SubscriptExp _ _ pos) = pos
+    getPos (FuncallExp _ _ pos) = pos
+    getPos (StructElt _ _ pos) = pos
+    getPos (StructDeref _ _ pos) = pos
+    getPos (CommaExp _ _ pos) = pos
+    getPos (AssignExp _ _ _ pos) = pos
+    getPos (ConditionalExp _ _ _ pos) = pos
+    getPos (BinaryExp _ _ _ pos) = pos
+    getPos (UnaryExp _ _ pos) = pos
+    getPos (CastExp _ _ pos) = pos
+    getPos (SizeofValueExp _ pos) = pos
+    getPos (SizeofTypeExp _ pos) = pos
+    getPos (AlignofExp _ pos) = pos
+    getPos (BlockExp _ _ pos) = pos
+    getPos (BuiltinVaArg pos) = pos
+    getPos (BuiltinOffsetOf pos) = pos
+    getPos (BuiltinTypesCompatible pos) = pos
+    getPos (BuiltinConvertVector pos) = pos
+
 data Declaration =
     Declaration [DeclarationSpecifier] [InitDeclarator] SourcePos |
     StaticAssert SourcePos
     deriving (Eq, Show)
 
+instance Pos Declaration where
+    getPos (Declaration _ _ pos) = pos
+    getPos (StaticAssert pos) = pos
+
 data InitDeclarator =
     InitDeclarator Declarator (Maybe Initializer) SourcePos
     deriving (Eq, Show)
+
+instance Pos InitDeclarator where
+    getPos (InitDeclarator _ _ pos) = pos
 
 data Initializer =
     InitAssign Exp SourcePos |
     InitList [InitializerPair] SourcePos
     deriving (Eq, Show)
 
+instance Pos Initializer where
+    getPos (InitAssign _ pos) = pos
+    getPos (InitList _ pos) = pos
+
 data InitializerPair =
     InitializerPair (Maybe [Designator]) Initializer SourcePos
     deriving (Eq, Show)
+
+instance Pos InitializerPair where
+    getPos (InitializerPair _ _ pos) = pos
 
 data Designator =
     SubscriptDesignator Exp SourcePos |
     StructDesignator Identifier SourcePos
     deriving (Eq, Show)
+
+instance Pos Designator where
+    getPos (SubscriptDesignator _ pos) = pos
+    getPos (StructDesignator _ pos) = pos
 
 data DeclarationSpecifier =
     DSStorageClass StorageClass SourcePos |
@@ -155,6 +198,14 @@ data DeclarationSpecifier =
     DSAlignmentSpecifier AlignmentSpecifier SourcePos |
     DSAttr [Attr] SourcePos
     deriving (Eq, Show)
+
+instance Pos DeclarationSpecifier where
+    getPos (DSStorageClass _ pos) = pos
+    getPos (DSTypeSpecifier _ pos) = pos
+    getPos (DSTypeQualifier _ pos) = pos
+    getPos (DSFunctionSpecifier _ pos) = pos
+    getPos (DSAlignmentSpecifier _ pos) = pos
+    getPos (DSAttr _ pos) = pos
 
 data StorageClass =
     Typedef |
@@ -192,10 +243,40 @@ data TypeSpecifier =
     TSTypeofDecl [DeclarationSpecifier] SourcePos
     deriving (Eq, Show)
 
+instance Pos TypeSpecifier where
+    getPos (Void pos) = pos
+    getPos (Char pos) = pos
+    getPos (UnsignedChar pos) = pos
+    getPos (Short pos) = pos
+    getPos (UnsignedShort pos) = pos
+    getPos (Int pos) = pos
+    getPos (UnsignedInt pos) = pos
+    getPos (Int128 pos) = pos
+    getPos (UnsignedInt128 pos) = pos
+    getPos (Long pos) = pos
+    getPos (UnsignedLong pos) = pos
+    getPos (LongLong pos) = pos
+    getPos (UnsignedLongLong pos) = pos
+    getPos (Float pos) = pos
+    getPos (Double pos) = pos
+    getPos (Bool pos) = pos
+    getPos (Complex pos) = pos
+    getPos (AtomicSpecifier pos) = pos
+    getPos (StructOrUnionSpecifier _ _ _ pos) = pos
+    getPos (EnumDefSpecifier _ _ pos) = pos
+    getPos (EnumRefSpecifier _ pos) = pos
+    getPos (TSTypedefName _ pos) = pos
+    getPos (TSTypeofExp _ pos) = pos
+    getPos (TSTypeofDecl _ pos) = pos
+
 data SpecifierQualifier =
     SQTypeSpecifier TypeSpecifier SourcePos |
     SQTypeQualifier TypeQualifier SourcePos
     deriving (Eq, Show)
+
+instance Pos SpecifierQualifier where
+    getPos (SQTypeSpecifier _ pos) = pos
+    getPos (SQTypeQualifier _ pos) = pos
 
 data StructType =
     Struct |
@@ -207,14 +288,25 @@ data StructDeclaration =
     StructStaticAssert SourcePos
     deriving (Eq, Show)
 
+instance Pos StructDeclaration where
+    getPos (StructDeclaration _ _ pos) = pos
+    getPos (StructStaticAssert pos) = pos
+
 data StructDeclarator =
     StructDeclarator Declarator (Maybe Exp) SourcePos |
     StructDeclaratorNoDecl Exp SourcePos
     deriving (Eq, Show)
 
+instance Pos StructDeclarator where
+    getPos (StructDeclarator _ _ pos) = pos
+    getPos (StructDeclaratorNoDecl _ pos) = pos
+
 data Enumerator =
     Enumerator Identifier (Maybe Exp) SourcePos
     deriving (Eq, Show)
+
+instance Pos Enumerator where
+    getPos (Enumerator _ _ pos) = pos
 
 data TypeQualifier =
     Const |
@@ -233,9 +325,16 @@ data AlignmentSpecifier =
     AlignAsConst Exp SourcePos
     deriving (Eq, Show)
 
+instance Pos AlignmentSpecifier where
+    getPos (AlignAsType _ pos) = pos
+    getPos (AlignAsConst _ pos) = pos
+
 data Declarator =
     Declarator (Maybe Pointer) DirectDeclarator SourcePos
     deriving (Eq, Show)
+
+instance Pos Declarator where
+    getPos (Declarator _ _ pos) = pos
 
 data DirectDeclarator =
     DDIdentifier Identifier SourcePos |
@@ -245,23 +344,44 @@ data DirectDeclarator =
     DDFunPtr DirectDeclarator [Identifier] SourcePos
     deriving (Eq, Show)
 
+instance Pos DirectDeclarator where
+    getPos (DDIdentifier _ pos) = pos
+    getPos (DDNested _ pos) = pos
+    getPos (DDArray _ _ _ _ _ pos) = pos
+    getPos (DDFun _ _ pos) = pos
+    getPos (DDFunPtr _ _ pos) = pos
+
 data Pointer =
     Pointer [TypeQualifier] (Maybe Pointer) SourcePos
     deriving (Eq, Show)
 
+instance Pos Pointer where
+    getPos (Pointer _ _ pos) = pos
+
 data ParameterTypeList =
     ParameterTypeList [ParameterDeclaration] Bool SourcePos
     deriving (Eq, Show)
+
+instance Pos ParameterTypeList where
+    getPos (ParameterTypeList _ _ pos) = pos
 
 data ParameterDeclaration =
     PDDeclarator [DeclarationSpecifier] Declarator SourcePos |
     PDAbstract [DeclarationSpecifier] (Maybe AbstractDeclarator) SourcePos
     deriving (Eq, Show)
 
+instance Pos ParameterDeclaration where
+    getPos (PDDeclarator _ _ pos) = pos
+    getPos (PDAbstract _ _ pos) = pos
+
 data AbstractDeclarator =
     AbstractPointer Pointer SourcePos |
     AbstractDeclarator (Maybe Pointer) DirectAbstractDeclarator SourcePos
     deriving (Eq, Show)
+
+instance Pos AbstractDeclarator where
+    getPos (AbstractPointer _ pos) = pos
+    getPos (AbstractDeclarator _ _ pos) = pos
 
 data DirectAbstractDeclarator =
     DANested AbstractDeclarator SourcePos |
@@ -270,8 +390,17 @@ data DirectAbstractDeclarator =
     DAFun (Maybe DirectAbstractDeclarator) ParameterTypeList SourcePos
     deriving (Eq, Show)
 
+instance Pos DirectAbstractDeclarator where
+    getPos (DANested _ pos) = pos
+    getPos (DAArray _ _ _ _ pos) = pos
+    getPos (DAArrayStar _ pos) = pos
+    getPos (DAFun _ _ pos) = pos
+
 data Asm = Asm SourcePos
     deriving (Eq, Show)
+
+instance Pos Asm where
+    getPos (Asm pos) = pos
 
 data AsmQualifier =
     AsmInline |
@@ -286,6 +415,9 @@ data AsmOperand =
 data TypeName =
     TypeName [SpecifierQualifier] (Maybe AbstractDeclarator) SourcePos
     deriving (Eq, Show)
+
+instance Pos TypeName where
+    getPos (TypeName _ _ pos) = pos
 
 data Statement =
     LabelStatement Identifier Statement SourcePos |
@@ -306,17 +438,48 @@ data Statement =
     AsmStatement SourcePos
     deriving (Eq, Show)
 
+instance Pos Statement where
+    getPos (LabelStatement _ _ pos) = pos
+    getPos (CaseStatement _ _ _ pos) = pos
+    getPos (DefaultStatement _ pos) = pos
+    getPos (CompoundStatement _ _ pos) = pos
+    getPos (ExpressionStatement _ pos) = pos
+    getPos (IfStatement _ _ _ pos) = pos
+    getPos (SwitchStatement _ _ pos) = pos
+    getPos (WhileStatement _ _ pos) = pos
+    getPos (DoStatement _ _ pos) = pos
+    getPos (ForStatement _ _ _ _ _ pos) = pos
+    getPos (GotoStatement _ pos) = pos
+    getPos (ContinueStatement pos) = pos
+    getPos (BreakStatement pos) = pos
+    getPos (ReturnStatement _ pos) = pos
+    getPos (EmptyStatement pos) = pos
+    getPos (AsmStatement pos) = pos
+
 data BlockItem =
     BIDeclaration Declaration SourcePos |
     BIStatement Statement SourcePos
     deriving (Eq, Show)
 
+instance Pos BlockItem where
+    getPos (BIDeclaration _ pos) = pos
+    getPos (BIStatement _ pos) = pos
+
 data TranslationUnit =
     TranslationUnit [ExternalDeclaration] SourcePos
     deriving (Eq, Show)
+
+instance Pos TranslationUnit where
+    getPos (TranslationUnit _ pos) = pos
 
 data ExternalDeclaration =
     ExternalDeclaration Declaration SourcePos |
     FunDef [DeclarationSpecifier] Declarator [Declaration] Statement SourcePos |
     AsmDeclaration Asm SourcePos
     deriving (Eq, Show)
+
+instance Pos ExternalDeclaration where
+    getPos (ExternalDeclaration _ pos) = pos
+    getPos (FunDef _ _ _ _ pos) = pos
+    getPos (AsmDeclaration _ pos) = pos
+

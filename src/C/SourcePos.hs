@@ -1,6 +1,7 @@
 module C.SourcePos (
     SourcePos(..),
-    SourceRange(..)
+    SourceRange(..),
+    Pos(..)
     ) where
 
 import Data.Text (Text)
@@ -13,6 +14,9 @@ data SourcePos = SourcePos {
 
 instance Show SourcePos where
     show (SourcePos line col file) = show file ++ ":" ++ show line ++ ":" ++ show col
+
+class Pos a where
+    getPos :: a -> SourcePos
 
 data SourceRange = SourceRange {
     rangeBegin :: !SourcePos,

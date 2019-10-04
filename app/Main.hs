@@ -1,17 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
         
+import C.ErrorType
 import C.HIR
+import C.Identifier
 import C.Lexer
 import C.Parser
 import C.PrettyPrint
-import C.Prune
-import C.Translate
-import C.Identifier
+import C.Slice
 import C.SymbolTable
+import C.Translate
 
 import Control.Monad
-import Control.Monad.Except
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
@@ -23,7 +23,7 @@ import Data.Text.Prettyprint.Doc.Util
 import qualified Data.Text.IO as T
 import Data.Text.Encoding (decodeUtf8)
 import Debug.Trace
-import Options.Applicative
+import Options.Applicative hiding (ParseError)
 import Text.Pretty.Simple (pPrint)
 
 import System.IO (hClose)
@@ -63,29 +63,6 @@ options = info (flags <**> helper)
 when' :: Applicative f => Bool -> f () -> f ()
 when' b m = if b then m else pure ()
 
-main :: IO ()
-main = do
-    flags <- execParser options
-    input <- T.getContents
-    let ast = input `seq` parse input
-    case ast of
-        Left e -> error $ show e
-        Right ast' -> do
-            when' (showAST flags) $ do
-                pPrint ast'
-                T.putStrLn "\n"
-            case toHir ast' of
-                Left e -> error . T.unpack $ e
-                Right hir -> do
-                    when' (showPreHIR flags) $ do
-                        pPrint hir
-                        T.putStrLn "\n"
-                    putDocW 80 $ ppTranslationUnit hir
-                    T.putStrLn ""
-    where
-        parse s = runAlex "<stdin>" s translation_unit
-
-{-
 findFunDef :: Identifier -> TranslationUnit -> Maybe ExternalDeclaration
 findFunDef nm (TranslationUnit edecls) = listToMaybe $ filter isFun edecls
     where
@@ -97,27 +74,63 @@ funRefs nm tu = do
     fun <- trace "1" $ findFunDef nm tu
     pure $ refs fun
 
-pruneFun :: Identifier -> TranslationUnit -> Maybe TranslationUnit
-pruneFun nm tu = do
-    rs <- trace "2" $ funRefs nm tu
-    prune rs tu
+sliceFun :: Identifier -> TranslationUnit -> Either SliceError TranslationUnit
+{-
+-- FIXME: remove explicit cases
+sliceFun nm@(Identifier nm') tu = do
+    case funRefs nm tu of
+        Nothing -> Left $ SliceError Nothing $ T.concat [
+            "Couldn't find function definition '", nm', "'"] 
+        (Just rs) -> case slice rs tu of
+            Nothing -> Left $ SliceError Nothing "slice failed"
+            (Just tu) -> Right tu
+            -}
+sliceFun _nm = Right
+
+prefixErr :: Text -> Text
+prefixErr = T.append "error: "
+
+printErr :: SliceError -> IO ()
+printErr (SliceError Nothing msg) = T.putStrLn $ prefixErr msg
+printErr (SliceError (Just pos) msg) =
+    T.putStrLn $ prefixErr $ T.concat [
+        T.pack $ show pos,
+        ": ",
+        msg]
+
+-- FIXME: remove explicit cases
+runSlice :: Flags -> Text -> Identifier -> IO ()
+runSlice flags input nm = do
+    case parse input of
+        (Left err) -> printErr err
+        (Right ast) -> do
+            when' (showAST flags) $ do
+                pPrint ast
+                T.putStrLn "\n"
+
+            case toHir ast of
+                (Left err) -> printErr err
+                (Right hir) -> do
+                    when' (showPreHIR flags) $ do
+                        pPrint hir
+                        T.putStrLn "\n"
+
+                    case sliceFun nm hir of
+                        (Left err) -> printErr err
+                        (Right hir') -> do
+                            when' (showPostHIR flags) $ do
+                                pPrint hir'
+                                T.putStrLn "\n"
+
+                            putDocW 80 $ ppTranslationUnit hir'
+                            T.putStrLn ""
+                            pure ()
+    where
+        parse s = runAlex "<stdin>" s translation_unit
 
 main :: IO ()
 main = do
-    input <- getContents
-    let ast = input `seq` parse input
-    case ast of
-        Left e -> error e
-        Right ast' -> do
-            case toHir ast' of
-                Left e -> error e
-                Right hir -> do
-                    case trace (show hir) $ pruneFun (Identifier "inc_x") hir of
-                        Nothing -> error "prune failed"
-                        (Just hir') -> do
-                            putDocW 80 $ ppTranslationUnit hir'
-    where
-        parse s = runAlex s translation_unit
--}
-
+    flags <- execParser options
+    input <- T.getContents
+    input `seq` runSlice flags input (Identifier "inc_x")
 

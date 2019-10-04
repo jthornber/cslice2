@@ -1,6 +1,6 @@
-module C.Prune (
+module C.Slice (
     Reference(..),
-    Prune(..)
+    Slice(..)
     ) where
 
 import C.HIR
@@ -137,79 +137,79 @@ instance Reference ExternalDeclaration where
     refs (FunDef ft sym s) = refs ft `S.union` S.singleton sym `S.union` refs s
     refs AsmDeclaration = S.empty
 
-class Prune a where
-    prune :: Set Symbol -> a -> Maybe a
+class Slice a where
+    slice :: Set Symbol -> a -> Maybe a
 
-instance (Prune a) => Prune (Maybe a) where
-    prune _ Nothing = Nothing
-    prune rs (Just a) = Just $ prune rs a
+instance (Slice a) => Slice (Maybe a) where
+    slice _ Nothing = Nothing
+    slice rs (Just a) = Just $ slice rs a
 
-instance (Prune a) => Prune [a] where
-    prune rs = Just . catMaybes . map (prune rs)
+instance (Slice a) => Slice [a] where
+    slice rs = Just . catMaybes . map (slice rs)
 
-instance Prune TranslationUnit where
-    prune rs (TranslationUnit ds) = trace (show ds) $ TranslationUnit <$> prune rs ds
+instance Slice TranslationUnit where
+    slice rs (TranslationUnit ds) = trace (show ds) $ TranslationUnit <$> slice rs ds
 
-instance Prune ExternalDeclaration where
-    prune rs (ExternalDeclaration d) = ExternalDeclaration <$> prune rs d
-    prune rs fd@(FunDef _ sym _) | S.member sym rs = trace "here" $ pure fd
-    prune _ _ = Nothing
+instance Slice ExternalDeclaration where
+    slice rs (ExternalDeclaration d) = ExternalDeclaration <$> slice rs d
+    slice rs fd@(FunDef _ sym _) | S.member sym rs = trace "here" $ pure fd
+    slice _ _ = Nothing
 
-instance Prune Declaration where
-    prune rs (VarDeclaration t msc sym mlit) | S.member sym rs = do
-        t' <- prune rs t
+instance Slice Declaration where
+    slice rs (VarDeclaration t msc sym mlit) | S.member sym rs = do
+        t' <- slice rs t
         pure $ VarDeclaration t' msc sym mlit
 
-    prune rs (FunDeclaration t sc sym fs) | S.member sym rs = do
-        t' <- prune rs t
+    slice rs (FunDeclaration t sc sym fs) | S.member sym rs = do
+        t' <- slice rs t
         pure $ FunDeclaration t' sc sym fs
-    prune rs (TypedefDeclaration t sym) | S.member sym rs = do
-        t' <- prune rs t
+    slice rs (TypedefDeclaration t sym) | S.member sym rs = do
+        t' <- slice rs t
         pure $ TypedefDeclaration t' sym
-    prune rs (TypeDeclaration t) = TypeDeclaration <$> prune rs t
-    prune _ _ = Nothing  -- FIXME: is this right?
+    slice rs (TypeDeclaration t) = TypeDeclaration <$> slice rs t
+    slice _ _ = Nothing  -- FIXME: is this right?
 
-instance Prune Type where
-    prune rs (Type rt cvr) = do
-        rt' <- prune rs rt
+instance Slice Type where
+    slice rs (Type rt cvr) = do
+        rt' <- slice rs rt
         pure $ Type rt' cvr
 
-instance Prune RawType where
-    prune rs (TyEnum Nothing (Just es)) = do
-        es' <- prune rs es
+instance Slice RawType where
+    slice rs (TyEnum Nothing (Just es)) = do
+        es' <- slice rs es
         pure $ TyEnum Nothing (Just es')
-    prune rs (TyEnum (Just sym) mes) | S.member sym rs = TyEnum (Just sym) <$> prune rs mes
-    prune _ (TyEnum _ _) = Nothing
+    slice rs (TyEnum (Just sym) mes) | S.member sym rs = TyEnum (Just sym) <$> slice rs mes
+    slice _ (TyEnum _ _) = Nothing
 
-    prune rs (TyArray ty me) = do
-        ty' <- prune rs ty
+    slice rs (TyArray ty me) = do
+        ty' <- slice rs ty
         pure $ TyArray ty' me
 
-    prune rs (TyStruct st sym entries) | S.member sym rs = do
-        entries' <- prune rs entries
+    slice rs (TyStruct st sym entries) | S.member sym rs = do
+        entries' <- slice rs entries
         pure $ TyStruct st sym entries'
-    prune _ (TyStruct _ _ _) = Nothing
+    slice _ (TyStruct _ _ _) = Nothing
 
-    prune rs (TyStructRef st sym) | S.member sym rs = pure $ TyStructRef st sym
-    prune _ (TyStructRef _ _) = Nothing
+    slice rs (TyStructRef st sym) | S.member sym rs = pure $ TyStructRef st sym
+    slice _ (TyStructRef _ _) = Nothing
 
-    prune rs (TyPointer ty) = TyPointer <$> prune rs ty
-    prune rs (TyFunction ft) = TyFunction <$> prune rs ft
-    prune rs a@(TyAlias sym) | S.member sym rs = pure a
-    prune _ te@(TyTypeofExp _) = pure te
-    prune rs (TyTypeofType ty) = TyTypeofType <$> prune rs ty
-    prune _ rt = pure rt
+    slice rs (TyPointer ty) = TyPointer <$> slice rs ty
+    slice rs (TyFunction ft) = TyFunction <$> slice rs ft
+    slice rs a@(TyAlias sym) | S.member sym rs = pure a
+    slice _ te@(TyTypeofExp _) = pure te
+    slice rs (TyTypeofType ty) = TyTypeofType <$> slice rs ty
+    slice _ rt = pure rt
 
-instance Prune EnumEntry where
-    prune rs e@(EnumEntry sym _) | S.member sym rs = pure e
-    prune _ _ = Nothing
+instance Slice EnumEntry where
+    slice rs e@(EnumEntry sym _) | S.member sym rs = pure e
+    slice _ _ = Nothing
 
-instance Prune StructEntry where
-    prune rs (StructEntry ty (Just sym) me) | S.member sym rs = do
-        ty' <- prune rs ty
+instance Slice StructEntry where
+    slice rs (StructEntry ty (Just sym) me) | S.member sym rs = do
+        ty' <- slice rs ty
         pure $ StructEntry ty' (Just sym) me
-    prune _ _ = Nothing
+    slice _ _ = Nothing
 
 -- FIXME: finish
-instance Prune FunType where
-    prune _ ft@(FunType _ _ _) = pure ft
+instance Slice FunType where
+    slice _ ft@(FunType _ _ _) = pure ft
