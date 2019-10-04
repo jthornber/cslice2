@@ -11,15 +11,13 @@ import C.Slice
 import C.SymbolTable
 import C.Translate
 
-import Control.Monad
 import Data.Maybe
 import Data.Set (Set)
-import qualified Data.Set as S
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Util
+import Data.Text.Prettyprint.Doc.Render.Text
+import Data.Text.Prettyprint.Doc hiding (indent)
 import qualified Data.Text.IO as T
 import Data.Text.Encoding (decodeUtf8)
 import Debug.Trace
@@ -29,11 +27,13 @@ import Text.Pretty.Simple (pPrint)
 import System.IO (hClose)
 import System.Process.Typed
 import qualified Data.ByteString.Lazy as L
-import qualified Data.ByteString.Lazy.Char8 as L8
 import Control.Concurrent.STM (atomically)
 
-normCode :: Text -> IO Text
-normCode code = withProcess_ indent $ \p -> do
+------------------------------------------------------
+
+-- Runs C code through the GNU indent tool
+indentCode :: Text -> IO Text
+indentCode code = withProcess_ indent $ \p -> do
     T.hPutStr (getStdin p) code
     hClose (getStdin p)
     decodeUtf8 . L.toStrict <$> atomically (getStdout p)
@@ -50,13 +50,13 @@ data Flags = Flags {
     showPostHIR :: Bool
 }
 
-flags :: Parser Flags
-flags = Flags <$> switch (long "ast" <> help "Show the abstract syntax tree")
-              <*> switch (long "hir-pre-slice" <> help "Show high level intermediate representation, before slice")
-              <*> switch (long "hir-post-slice" <> help "Show high level intermediate representation, after slice")
+flags' :: Parser Flags
+flags' = Flags <$> switch (long "ast" <> help "Show the abstract syntax tree")
+               <*> switch (long "hir-pre-slice" <> help "Show high level intermediate representation, before slice")
+               <*> switch (long "hir-post-slice" <> help "Show high level intermediate representation, after slice")
 
 options :: ParserInfo Flags
-options = info (flags <**> helper)
+options = info (flags' <**> helper)
             (fullDesc <> progDesc "Slice and dice C programs in exciting ways."
                       <> header "cslice - Unit test legacy C code")
 
@@ -122,9 +122,8 @@ runSlice flags input nm = do
                                 pPrint hir'
                                 T.putStrLn "\n"
 
-                            putDocW 80 $ ppTranslationUnit hir'
-                            T.putStrLn ""
-                            pure ()
+                            code <- indentCode . renderStrict . layoutCompact . ppTranslationUnit $ hir'
+                            T.putStr code
     where
         parse s = runAlex "<stdin>" s translation_unit
 
