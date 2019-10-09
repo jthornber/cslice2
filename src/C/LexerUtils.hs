@@ -52,7 +52,7 @@ import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
-import qualified Data.Text as Text
+import qualified Data.Text as T
 import Text.Ascii
 
 import Control.Applicative as App (Applicative (..))
@@ -86,7 +86,7 @@ type Byte = Word8
 
 withS :: (Text -> SourcePos -> Token SourcePos) ->
          Input -> Int -> Alex (Token SourcePos)
-withS fn inp len = pure $ fn (Text.take len (inputText inp)) (inputPos inp)
+withS fn inp len = pure $ fn (T.take len (inputText inp)) (inputPos inp)
 
 keyword :: (SourcePos -> Token SourcePos) ->
            Input -> Int -> Alex (Token SourcePos)
@@ -110,7 +110,7 @@ charPosMany ((b, e, offset):rs) c = case charPos b e c of
 intToken :: (String -> Integer) -> Text -> SourcePos -> Token SourcePos
 intToken fn txt pos = T_INTEGER (fn ns) (sign suffix) (intType suffix) pos
     where
-        s = Text.unpack txt
+        s = T.unpack txt
         (suffix', ns') = span suffixChar . reverse $ s
         suffix = reverse suffix'
         ns = reverse ns'
@@ -286,7 +286,7 @@ alexInputPrevChar = inputPrevChar
 {-# INLINE alexGetByte #-}
 alexGetByte :: AlexInput -> Maybe (Word8, AlexInput)
 alexGetByte (Input { inputPos = p, inputText = text }) =
-  do (c,text') <- Text.uncons text
+  do (c,text') <- T.uncons text
      let p'  = moveSourcePos c p
          x   = ascii c
          inp = Input { inputPrev     = p
@@ -373,4 +373,6 @@ alexSetUserState ss = Alex $ \s -> Right (s{alex_ust=ss}, ())
 
 getCurrentPos :: Alex SourcePos
 getCurrentPos = Alex $ \s -> Right (s, inputPos . alex_inp $ s)
+
+
 

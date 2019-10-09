@@ -1,4 +1,5 @@
 {
+{-# LANGUAGE OverloadedStrings #-}
 module C.Lexer (
     Alex(..),
     SourcePos(..),
@@ -12,6 +13,7 @@ module C.Lexer (
 
 import C.Token
 import C.LexerUtils
+import Data.Text (Text)
 import qualified Data.Text as T
 }
 
@@ -33,7 +35,7 @@ tokens :-
 
 $white+			;
 
-\#$white*@int$white*(\"[^\"]+\"$white*)?(@int$white*)*\r?$eol	;
+\#$white*@int$white*(\"[^\"]+\"$white*)?(@int$white*)*\r?$eol	{lineDirective}
 
 "["		{punc T_OPEN_SQUARE}
 "]"		{punc T_CLOSE_SQUARE}
@@ -165,6 +167,7 @@ lexStep k = do
                 else k $ T_IDENTIFIER nm pos
         t -> k t
 
+alexMonadScan :: Alex (Token SourcePos)
 alexMonadScan = do
   inp <- alexGetInput
   case alexScan inp 0 of
@@ -179,6 +182,21 @@ alexMonadScan = do
     AlexToken inp' len action -> do
         alexSetInput inp'
         action inp len
+
+-- FIXME: Slow
+unquote :: Text -> Text
+unquote = T.pack . reverse . tail . reverse . tail . T.unpack
+
+lineDirective :: Input -> Int -> Alex (Token SourcePos)
+lineDirective inp len = do
+    alexSetInput $ inp {inputText = T.drop len (inputText inp),
+                        inputPos = (SourcePos line 0 file)
+                       }
+    alexMonadScan
+    where
+        fields = T.splitOn " " . T.take len . inputText $ inp
+        line = read . T.unpack $ fields !! 1
+        file = unquote $ fields !! 2
 
 
 -- just ignore this token and scan another one
