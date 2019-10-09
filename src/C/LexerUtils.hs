@@ -145,7 +145,7 @@ traceIt :: (Show a) => a -> a
 traceIt x = trace (show x) x
 
 alexEOF :: Alex (Token SourcePos)
-alexEOF = return . T_EOF $ SourcePos 0 0 "<eof>"
+alexEOF = return . T_EOF $ SourcePos 0 0 0 "<eof>"
 
 data AlexUserState = AlexUserState {
     typedefs :: Set Identifier,
@@ -228,46 +228,23 @@ initialInput file str = Input
   }
 
 startPos :: Text {- ^ Name of file/thing containing this -} -> SourcePos
-startPos file = SourcePos { sourceLine    = 1
+startPos file = SourcePos { sourceIndex = 0
+                          , sourceLine    = 1
                           , sourceColumn  = 1
                           , sourceFile    = file
                           }
 
 beforeStartPos :: Text -> SourcePos
-beforeStartPos file = SourcePos { sourceLine    = 0
+beforeStartPos file = SourcePos { sourceIndex = 0
+                                , sourceLine    = 0
                                 , sourceColumn  = 0
                                 , sourceFile    = file
                                 }
 
-{- | Move one position back.  Assumes that newlines use a single bytes.
-
-This function is intended to be used when starting the lexing somewhere
-in the middle of the input, for example, if we are implementing a quasi
-quoter, and the previous part of the input is not in our language.
--}
-{-
-prevPos :: SourcePos -> SourcePos
-prevPos p
-  | sourceColumn p > 1 = p { sourceColumn = sourceColumn p - 1
-                           }
-
-  | sourceLine p > 1   = p { sourceLine   = sourceLine p - 1
-                           , sourceColumn = 1
-                           }
-
-  | otherwise          = beforeStartPos (sourceFile p)
--}
-
--- | The file/thing for the current position.
---
- {-
-inputFile :: Input -> Text
-inputFile = sourceFile . inputPos
--}
-
 -- | Update a 'SourcePos' for a particular matched character
 moveSourcePos :: Char -> SourcePos -> SourcePos
-moveSourcePos c p = SourcePos { sourceLine   = newLine
+moveSourcePos c p = SourcePos { sourceIndex = (sourceIndex p) + 1
+                              , sourceLine   = newLine
                               , sourceColumn = newColumn
                               , sourceFile   = sourceFile p
                               }
@@ -307,7 +284,7 @@ alexGetByte (Input { inputPos = p, inputText = text }) =
 -- assuming the usual eight character tab stops.
 
 alexStartPos :: Text -> SourcePos
-alexStartPos file = SourcePos 1 1 file
+alexStartPos file = SourcePos 0 1 1 file
 
 tab_size :: Int
 tab_size = 8

@@ -7,13 +7,14 @@ module C.SourcePos (
 import Data.Text (Text)
 
 data SourcePos = SourcePos {
+    sourceIndex :: !Int,
     sourceLine :: !Int,
     sourceColumn :: !Int,
     sourceFile :: !Text
 } deriving (Eq)
 
 instance Show SourcePos where
-    show (SourcePos line col file) = show file ++ ":" ++ show line ++ ":" ++ show col
+    show (SourcePos _ line col file) = show file ++ ":" ++ show line ++ ":" ++ show col
 
 class Pos a where
     getPos :: a -> SourcePos

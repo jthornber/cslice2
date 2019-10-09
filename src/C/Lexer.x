@@ -191,13 +191,14 @@ unquote = T.pack . reverse . tail . reverse . tail . T.unpack
 lineDirective :: Input -> Int -> Alex (Token SourcePos)
 lineDirective inp len = do
     alexSetInput $ inp {inputText = T.drop len (inputText inp),
-                        inputPos = (SourcePos line 0 file)
+                        inputPos = (SourcePos (sourceIndex pos + len) line 0 file)
                        }
     alexMonadScan
     where
         fields = T.splitOn " " . T.take len . inputText $ inp
         line = read . T.unpack $ fields !! 1
         file = unquote $ fields !! 2
+        pos = inputPos inp
 
 
 -- just ignore this token and scan another one
