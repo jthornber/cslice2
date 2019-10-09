@@ -112,6 +112,7 @@ __label__	{keyword T_LABEL}
 long		{keyword T_LONG}
 register	{keyword T_REGISTER}
 restrict	{keyword T_RESTRICT}
+__restrict	{keyword T_RESTRICT}
 return		{keyword T_RETURN}
 short		{keyword T_SHORT}
 signed		{keyword T_SIGNED}
