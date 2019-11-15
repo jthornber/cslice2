@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
-        
+
+import qualified C.AST as AST
 import C.ErrorType
 import C.HIR
 import C.Identifier
@@ -8,7 +9,7 @@ import C.Lexer
 import C.Parser
 import C.PreProcessor
 import C.PrettyPrint
-import C.Slice
+import qualified C.Slice as Slice
 import C.SymbolTable
 import C.Translate
 
@@ -86,7 +87,7 @@ findFunDef nm (TranslationUnit edecls) = listToMaybe $ filter isFun edecls
 funRefs :: Identifier -> TranslationUnit -> Maybe (Set Symbol)
 funRefs nm tu = do
     fun <- trace "1" $ findFunDef nm tu
-    pure $ refs fun
+    pure $ Slice.refs fun
 
 sliceFun :: Identifier -> TranslationUnit -> Either SliceError TranslationUnit
 {-
@@ -95,7 +96,7 @@ sliceFun nm@(Identifier nm') tu = do
     case funRefs nm tu of
         Nothing -> Left $ SliceError Nothing $ T.concat [
             "Couldn't find function definition '", nm', "'"] 
-        (Just rs) -> case slice rs tu of
+        (Just rs) -> case Slice.slice rs tu of
             Nothing -> Left $ SliceError Nothing "slice failed"
             (Just tu) -> Right tu
             -}
@@ -104,39 +105,27 @@ sliceFun _nm = Right
 prefixErr :: Text -> Text
 prefixErr = T.append "error: "
 
-printErr :: SliceError -> IO ()
-printErr (SliceError Nothing msg) = T.putStrLn $ prefixErr msg
-printErr (SliceError (Just pos) msg) =
+-- FIXME: slow
+showPos :: SourcePos -> Text -> IO ()
+showPos pos input = do
+    T.putStr "    "
+    T.putStrLn $ (T.lines input) !! ((sourceLine pos) - 1)
+
+printErr :: SliceError -> Text -> IO ()
+printErr (SliceError Nothing msg) _ = T.putStrLn $ prefixErr msg
+printErr (SliceError (Just pos) msg) input = do
     T.putStrLn . prefixErr $ T.concat [ T.pack $ show pos, ": ", msg]
+    showPos pos input
 
--- FIXME: remove explicit cases
-runSlice :: Flags -> Text -> Identifier -> IO ()
-runSlice flags input nm = do
-    case parse input of
-        (Left err) -> printErr err
-        (Right ast) -> do
-            when' (flagShowAST flags) $ do
-                pPrint ast
-                T.putStrLn "\n"
+slice :: Text -> Identifier -> Either SliceError (AST.TranslationUnit, TranslationUnit, TranslationUnit)
+slice input nm = do
+    ast <- runAlex "<stdin>" input translation_unit
+    hirPre <- toHir ast
+    hirPost <- sliceFun nm hirPre
+    pure (ast, hirPre, hirPost)
 
-            case toHir ast of
-                (Left err) -> printErr err
-                (Right hir) -> do
-                    when' (flagShowPreHIR flags) $ do
-                        pPrint hir
-                        T.putStrLn "\n"
-
-                    case sliceFun nm hir of
-                        (Left err) -> printErr err
-                        (Right hir') -> do
-                            when' (flagShowPostHIR flags) $ do
-                                pPrint hir'
-                                T.putStrLn "\n"
-
-                            code <- indentCode . renderStrict . layoutCompact . ppTranslationUnit $ hir'
-                            T.putStr code
-    where
-        parse s = runAlex "<stdin>" s translation_unit
+printIt :: (Show a) => Bool -> a -> IO ()
+printIt b v = when' b $ pPrint v >> T.putStrLn "\n"
 
 main :: IO ()
 main = do
@@ -147,6 +136,18 @@ main = do
         cppIncludes = map T.pack $ flagIncludes flags,
         cppDefines = map T.pack $ flagDefines flags
     }
+    
     input <- cpp cppOpts
-    input `seq` runSlice flags input (Identifier "inc_x")
+    
+    case slice input (Identifier "inc_x") of
+        (Left err) -> printErr err input
+        (Right (ast, hirPre, hirPost)) -> do
+            
+            printIt (flagShowAST flags) ast
+            printIt (flagShowPreHIR flags) hirPre
+            printIt (flagShowPostHIR flags) hirPost
+
+            code <- indentCode . renderStrict . layoutCompact . ppTranslationUnit $ hirPost
+            T.putStr code
+
 
